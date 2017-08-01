@@ -1,0 +1,10 @@
+tzlocal
+iso8601
+pytz
+terminaltables
+docopt
+requests
+tinydb
+pydash
+tqdm
+durationpy
