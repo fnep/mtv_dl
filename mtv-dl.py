@@ -93,6 +93,7 @@ import traceback
 import tempfile
 import codecs
 import xxhash
+import urllib.parse
 from datetime import datetime, timedelta
 from functools import lru_cache
 from functools import partial
@@ -103,6 +104,7 @@ import rfc6266
 import pytz
 import requests
 import tzlocal
+from pydash import py_
 from terminaltables import AsciiTable
 from tinydb import TinyDB, Query
 from tqdm import tqdm
@@ -395,32 +397,32 @@ def serialize_for_json(obj):
 
 
 def download_files(destination_dir_path, target_urls):
-    for url in target_urls:
-        try:
-            response = requests.get(url, stream=True)
-            total_size = int(response.headers.get('content-length', 0))
 
-            # determine filename and destination
+    file_sizes = []
+    with tqdm(unit='B',
+              unit_scale=True,
+              leave=False,
+              disable=HIDE_PROGRESSBAR,
+              desc='downloading show files') as progress_bar:
+
+        for url in target_urls:
+
+            # determine file size for progressbar
+            response = requests.get(url, stream=True)
+            file_sizes.append(int(response.headers.get('content-length', 0)))
+            progress_bar.total = sum(file_sizes) / len(file_sizes) * len(target_urls)
+
+            # determine file name and destination
             default_filename = os.path.basename(url)
             file_name = rfc6266.parse_requests_response(response).filename_unsafe or default_filename
             destination_file_path = os.path.join(destination_dir_path, file_name)
 
             # actual download
             with open(destination_file_path, 'wb') as fh:
-                logging.debug('Downloading %r to %r.', url, destination_file_path)
-                with tqdm(total=total_size,
-                          unit='B',
-                          unit_scale=True,
-                          leave=False,
-                          disable=HIDE_PROGRESSBAR,
-                          desc='downloading show') as progress_bar:
-                    for data in response.iter_content(32 * 1024):
-                        progress_bar.update(len(data))
-                        fh.write(data)
+                for data in response.iter_content(32 * 1024):
+                    progress_bar.update(len(data))
+                    fh.write(data)
 
-        except requests.exceptions.HTTPError as e:
-            logging.error('Failed to get the url %r: %s', url, str(e))
-        else:
             yield destination_file_path
 
 
@@ -444,12 +446,73 @@ def move_finished_download(source_path, cwd, target, show, file_name, file_exten
         logging.info('Saved %r from %s to %r.', show['title'], show['start'], destination_file_path)
 
 
+def get_m3u8_segments(base_url, hls_file_path):
+
+    with open(hls_file_path, 'r+') as fh:
+        segment = {}
+        for line in fh:
+            if not line:
+                continue
+            elif line.startswith("#EXT-X-STREAM-INF:"):
+                # see https://tools.ietf.org/html/draft-pantos-http-live-streaming-16#section-4.3.4.2
+                segment = {m.group(1).lower(): m.group(2).strip() for m in re.finditer(r'([A-Z-]+)=([^,]+)', line)}
+                for key, value in segment.items():
+                    if value[0] in ('"', "'") and value[0] == value[-1]:
+                        value = value[1:-1]
+                    else:
+                        try:
+                            segment[key] = int(value)
+                        except ValueError:
+                            pass
+            elif not line.startswith("#"):
+                segment['url'] = urllib.parse.urljoin(base_url, line.strip())
+                yield segment
+                segment = {}
+
+
+def download_hls_target(temp_dir_path, base_url, hls_file_path):
+
+    # get the available video streams ordered by quality
+    hls_index_segments = py_ \
+        .chain(get_m3u8_segments(base_url, hls_file_path)) \
+        .filter(lambda s: 'mp4a' not in s.get('codecs')) \
+        .filter(lambda s: s.get('bandwidth')) \
+        .sort(key=lambda s: s.get('bandwidth')) \
+        .value()
+
+    # select the wanted stream
+    designated_index_segment = hls_index_segments[-1]
+    designated_index_file = list(download_files(temp_dir_path, [designated_index_segment['url']]))[0]
+    logging.debug('Selected HLS bandwidth is %d (available: %s).',
+                  designated_index_segment['bandwidth'], ', '.join(str(s['bandwidth']) for s in hls_index_segments))
+
+    # get stream segments
+    hls_target_segments = list(get_m3u8_segments(base_url, designated_index_file))
+    hls_target_files = download_files(temp_dir_path, list(s['url'] for s in hls_target_segments))
+    logging.debug('%d HLS segments to download.', len(hls_target_segments))
+
+    # download and join the segment files
+    fd, temp_file_path = tempfile.mkstemp(dir=temp_dir_path)
+    with open(temp_file_path, 'wb') as out_fh:
+        for segment_file_path in hls_target_files:
+
+            with open(segment_file_path, 'rb') as in_fh:
+                out_fh.write(in_fh.read())
+
+            # delete the segment file immediately to save disk space
+            os.unlink(segment_file_path)
+
+    return temp_file_path
+
+
 def download_show(show, cwd, target):
 
     temp_path = tempfile.mkdtemp()
     try:
 
-        show_file_path = list(download_files(temp_path, [show['url_http']]))[0]
+        show_url = show['url_http']
+        logging.debug('Downloading %r for %r on %s.', show_url, show['title'], show['start'])
+        show_file_path = list(download_files(temp_path, [show_url]))[0]
         show_file_name = os.path.basename(show_file_path)
         if '.' in show_file_name:
             show_file_extension = '.%s' % os.path.basename(show_file_path).split('.')[-1]
@@ -459,10 +522,15 @@ def download_show(show, cwd, target):
 
         if show_file_extension in ('.mp4', '.flv'):
             move_finished_download(show_file_path, cwd, target, show, show_file_name, show_file_extension)
+        elif show_file_extension == '.m3u8':
+            ts_file_path = download_hls_target(temp_path, show_url, show_file_path)
+            move_finished_download(ts_file_path, cwd, target, show, show_file_name, '.ts')
         else:
             logging.error('File extension %s of %r from %s not supported.',
                           show_file_extension, show['title'], show['start'])
 
+    except (requests.exceptions.RequestException, OSError) as e:
+        logging.error('Download of %r from %s: failed: %s', show['title'], show['start'], str(e))
     finally:
         shutil.rmtree(temp_path)
 
