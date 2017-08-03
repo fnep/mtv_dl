@@ -49,7 +49,7 @@ Filters:
 
    '='  Pattern is a regular expression case insensitive search within the field value.
         Available for the fields 'description', 'start', 'duration', 'age', 'region',
-        'size', 'channel', 'topic' and 'title'.
+        'size', 'channel', 'topic', 'title' and 'url'.
 
    '!=' Pattern is a regular expression that must not appear in a case insensitive search
         within the field value. Available on the same fields as for the '=' operator.
@@ -302,7 +302,12 @@ def filter_items(items, rules, limit):
 
             field, operator, pattern = match.group('field'), match.group('operator'), match.group('pattern')
 
-            if field in ('description', 'region', 'size', 'channel', 'topic', 'title'):
+            # replace odd names
+            field = {
+                'url': 'url_http'
+            }.get(field, field)
+
+            if field in ('description', 'region', 'size', 'channel', 'topic', 'title', 'url_http'):
                 pattern = str(pattern)
             elif field in ('duration', 'age'):
                 pattern = durationpy.from_str(pattern)
@@ -314,14 +319,16 @@ def filter_items(items, rules, limit):
                 raise ConfigurationError('Invalid filter field: %r' % field)
 
             if operator == '=':
-                if field in ('description', 'duration', 'age', 'region', 'size', 'channel', 'topic', 'title'):
+                if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
+                             'topic', 'title', 'url_http'):
                     definition.append((field, partial(lambda p, v: bool(re.search(p, v, re.IGNORECASE)), pattern)))
                 elif field in ('start', ):
                     definition.append((field, partial(lambda p, v: v == p, pattern)))
                 else:
                     raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
             elif operator == '!=':
-                if field in ('description', 'duration', 'age', 'region', 'size', 'channel', 'topic', 'title'):
+                if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
+                             'topic', 'title', 'url_http'):
                     definition.append((field, partial(lambda p, v: not bool(re.search(p, v, re.IGNORECASE)), pattern)))
                 elif field in ('start', ):
                     definition.append((field, partial(lambda p, v: v != p, pattern)))
