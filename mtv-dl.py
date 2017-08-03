@@ -4,7 +4,7 @@
 """MediathekView-dl
 
 Usage:
-  {cmd} list [options] [-c =<results>] [<filter>...]
+  {cmd} list [options] [-c <results>] [<filter>...]
   {cmd} dump [options] [<filter>...]
   {cmd} history [--reset]
   {cmd} download [options] [--small|--high] [<filter>...]
@@ -31,8 +31,8 @@ History options:
   --reset                               Reset the list of downloaded shows.
 
 Download options:
-  -h, --high                            Download the high definition version (if available).
-  -s, --small                           Download the small version (if available).
+  -h, --high                            Download best available version (if available).
+  -s, --small                           Download the smallest available version (if available).
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{cwd}} (from the option --cwd),
                                         {{filename}} (from server filename) and {{ext}} (file
@@ -470,7 +470,7 @@ def get_m3u8_segments(base_url, hls_file_path):
                 segment = {}
 
 
-def download_hls_target(temp_dir_path, base_url, hls_file_path):
+def download_hls_target(temp_dir_path, base_url, quality_preference, hls_file_path):
 
     # get the available video streams ordered by quality
     hls_index_segments = py_ \
@@ -481,7 +481,13 @@ def download_hls_target(temp_dir_path, base_url, hls_file_path):
         .value()
 
     # select the wanted stream
-    designated_index_segment = hls_index_segments[-1]
+    if quality_preference[0] == '_hd':
+        designated_index_segment = hls_index_segments[-1]
+    elif quality_preference[0] == '_small':
+        designated_index_segment = hls_index_segments[0]
+    else:
+        designated_index_segment = hls_index_segments[len(hls_index_segments) // 2]
+
     designated_index_file = list(download_files(temp_dir_path, [designated_index_segment['url']]))[0]
     logging.debug('Selected HLS bandwidth is %d (available: %s).',
                   designated_index_segment['bandwidth'], ', '.join(str(s['bandwidth']) for s in hls_index_segments))
@@ -505,12 +511,16 @@ def download_hls_target(temp_dir_path, base_url, hls_file_path):
     return temp_file_path
 
 
-def download_show(show, cwd, target):
+def download_show(show, quality_preference, cwd, target):
 
     temp_path = tempfile.mkdtemp()
     try:
 
-        show_url = show['url_http']
+        # show url based on quality preference
+        show_url = show["url_http%s" % quality_preference[0]] \
+                   or show["url_http%s" % quality_preference[1]] \
+                   or show["url_http%s" % quality_preference[2]]
+
         logging.debug('Downloading %r for %r on %s.', show_url, show['title'], show['start'])
         show_file_path = list(download_files(temp_path, [show_url]))[0]
         show_file_name = os.path.basename(show_file_path)
@@ -523,7 +533,7 @@ def download_show(show, cwd, target):
         if show_file_extension in ('.mp4', '.flv'):
             move_finished_download(show_file_path, cwd, target, show, show_file_name, show_file_extension)
         elif show_file_extension == '.m3u8':
-            ts_file_path = download_hls_target(temp_path, show_url, show_file_path)
+            ts_file_path = download_hls_target(temp_path, show_url, quality_preference, show_file_path)
             move_finished_download(ts_file_path, cwd, target, show, show_file_name, '.ts')
         else:
             logging.error('File extension %s of %r from %s not supported.',
@@ -592,7 +602,13 @@ def main():
             raise NotImplemented()
         elif arguments['download']:
             for show in list(items):
-                download_show(show, cwd, arguments['--target'])
+                if arguments['--high']:
+                    quality_preference = ('_hd', '', '_small')
+                elif arguments['--small']:
+                    quality_preference = ('_small', '', '_hd')
+                else:
+                    quality_preference = ('', '_hd', '_small')
+                download_show(show, quality_preference, cwd, arguments['--target'])
     except ConfigurationError as e:
         logging.error(str(e))
     except KeyboardInterrupt:
