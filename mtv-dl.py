@@ -35,8 +35,9 @@ Download options:
   -s, --small                           Download the small version (if available).
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{cwd}} (from the option --cwd),
-                                        {{filename}} (server filename), and all fields from the
-                                        listing. [default: {{cwd}}/{{channel}}/{{filename}}]
+                                        {{filename}} (from server filename) and {{extension}}
+                                        (including the dot), and all fields from the listing.
+                                        [default: {{cwd}}/{{channel}}/{{start}} {{title}}{{extension}}]
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -86,8 +87,9 @@ import random
 import re
 import sys
 import time
+import shutil
 import traceback
-import itertools
+import tempfile
 import codecs
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -95,6 +97,7 @@ from functools import partial
 
 import docopt
 import iso8601
+import rfc6266
 import pytz
 import requests
 import tzlocal
@@ -142,8 +145,6 @@ DATABASE_URLS = [
 
 local_zone = tzlocal.get_localzone()
 now = datetime.now(tz=pytz.utc).replace(second=0, microsecond=0)
-cwd = os.getcwd()
-history_db = TinyDB(os.path.join(cwd, 'history.db'), default_table='history')
 
 
 class ConfigurationError(Exception):
@@ -246,7 +247,6 @@ def download_database(destination_path, retries=5):
             response = requests.get(random.choice(DATABASE_URLS), stream=True)
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
-            chunk_size = 32 * 1024
             with open(destination_path, 'wb') as f:
                 with tqdm(
                         total=total_size,
@@ -255,7 +255,7 @@ def download_database(destination_path, retries=5):
                         leave=False,
                         disable=HIDE_PROGRESSBAR,
                         desc='downloading database') as progress_bar:
-                    for data in response.iter_content(chunk_size):
+                    for data in response.iter_content(32 * 1024):
                         progress_bar.update(len(data))
                         f.write(data)
             return os.stat(destination_path).st_size
@@ -268,7 +268,7 @@ def download_database(destination_path, retries=5):
     raise requests.exceptions.HTTPError('retry limit reached, giving up')
 
 
-def load_database(refresh_after):
+def load_database(cwd, refresh_after):
     database_path = os.path.join(cwd, DATABASE_FILENAME)
     try:
         db = Database(database_path)
@@ -381,6 +381,79 @@ def serialize_for_json(obj):
         raise TypeError('%r is not JSON serializable' % obj)
 
 
+def download_files(destination_dir_path, target_urls):
+    for url in target_urls:
+        try:
+            response = requests.get(url, stream=True)
+            total_size = int(response.headers.get('content-length', 0))
+
+            # determine filename and destination
+            default_filename = os.path.basename(url)
+            file_name = rfc6266.parse_requests_response(response).filename_unsafe or default_filename
+            destination_file_path = os.path.join(destination_dir_path, file_name)
+
+            # actual download
+            with open(destination_file_path, 'wb') as fh:
+                logging.debug('Downloading %r to %r.', url, destination_file_path)
+                with tqdm(total=total_size,
+                          unit='B',
+                          unit_scale=True,
+                          leave=False,
+                          disable=HIDE_PROGRESSBAR,
+                          desc='downloading show') as progress_bar:
+                    for data in response.iter_content(32 * 1024):
+                        progress_bar.update(len(data))
+                        fh.write(data)
+
+        except requests.exceptions.HTTPError as e:
+            logging.error('Failed to get the url %r: %s', url, str(e))
+        else:
+            yield destination_file_path
+
+
+def move_finished_download(source_path, cwd, target, show, file_name, file_extension):
+
+    escaped_show_details = {k: str(v).replace(os.pathsep, '_') for k, v in show.items()}
+    destination_file_path = target.format(cwd=cwd,
+                                          filename=file_name,
+                                          extension=file_extension,
+                                          **escaped_show_details)
+
+    try:
+        try:
+            os.makedirs(os.path.dirname(destination_file_path))
+        except FileExistsError:
+            pass
+        os.rename(source_path, destination_file_path)
+    except OSError as e:
+        logging.warning('Skipped %r from %s: %s', show['title'], show['start'], str(e))
+    else:
+        logging.info('Saved %r from %s to %r.', show['title'], show['start'], destination_file_path)
+
+
+def download_show(show, cwd, target):
+
+    temp_path = tempfile.mkdtemp()
+    try:
+
+        show_file_path = list(download_files(temp_path, [show['url_http']]))[0]
+        show_file_name = os.path.basename(show_file_path)
+        if '.' in show_file_name:
+            show_file_extension = '.%s' % os.path.basename(show_file_path).split('.')[-1]
+            show_file_name = show_file_name[:len(show_file_extension)]
+        else:
+            show_file_extension = ''
+
+        if show_file_extension in ('.mp4', '.flv'):
+            move_finished_download(show_file_path, cwd, target, show, show_file_name, show_file_extension)
+        else:
+            logging.error('File extension %s of %r from %s not supported.',
+                          show_file_extension, show['title'], show['start'])
+
+    finally:
+        shutil.rmtree(temp_path)
+
+
 def main():
     arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__)))
 
@@ -402,6 +475,11 @@ def main():
     else:
         log_level = logging.INFO
 
+    # rfc6266 logging fix (don't expect an upstream fix for that)
+    for logging_handler in rfc6266.LOGGER.handlers:
+        rfc6266.LOGGER.removeHandler(logging_handler)
+    rfc6266.LOGGER.addHandler(logging.NullHandler())
+
     logging.basicConfig(
         filename=arguments['--logfile'],
         format="%(asctime)s %(levelname)-8s %(message)s",
@@ -410,8 +488,13 @@ def main():
 
     sys.excepthook = lambda c, e, t: logging.critical('%s: %s\n%s', c, e, ''.join(traceback.format_tb(t)))
 
+    # download and tracking
+    cwd = os.path.abspath(arguments['--cwd']) if arguments['--cwd'] else os.getcwd()
+    history_db = TinyDB(os.path.join(cwd, 'history.db'), default_table='history')
+    tempfile.tempdir = cwd
+
     try:
-        db = load_database(refresh_after=int(arguments['--refresh-after']))
+        db = load_database(cwd, refresh_after=int(arguments['--refresh-after']))
 
         item_limit = int(arguments['--count']) if arguments['list'] else None
         items = filter_items(items=db.items, rules=arguments['<filter>'], limit=item_limit)
@@ -423,7 +506,8 @@ def main():
         elif arguments['history']:
             raise NotImplemented()
         elif arguments['download']:
-            raise NotImplemented()
+            for show in list(items):
+                download_show(show, cwd, arguments['--target'])
     except ConfigurationError as e:
         logging.error(str(e))
     except KeyboardInterrupt:
