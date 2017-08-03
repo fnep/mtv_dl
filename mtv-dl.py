@@ -35,9 +35,10 @@ Download options:
   -s, --small                           Download the small version (if available).
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{cwd}} (from the option --cwd),
-                                        {{filename}} (from server filename) and {{extension}}
-                                        (including the dot), and all fields from the listing.
-                                        [default: {{cwd}}/{{channel}}/{{start}} {{title}}{{extension}}]
+                                        {{filename}} (from server filename) and {{ext}} (file
+                                        name extension including the dot), and all fields from
+                                        the listing.
+                                        [default: {{cwd}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -50,7 +51,7 @@ Filters:
 
    '='  Pattern is a regular expression case insensitive search within the field value.
         Available for the fields 'description', 'start', 'duration', 'age', 'region',
-        'size', 'channel', 'topic', 'title' and 'url'.
+        'size', 'channel', 'topic', 'title', 'hash' and 'url'.
 
    '!=' Pattern is a regular expression that must not appear in a case insensitive search
         within the field value. Available on the same fields as for the '=' operator.
@@ -91,6 +92,7 @@ import shutil
 import traceback
 import tempfile
 import codecs
+import xxhash
 from datetime import datetime, timedelta
 from functools import lru_cache
 from functools import partial
@@ -151,31 +153,41 @@ class ConfigurationError(Exception):
     pass
 
 
-def qualify_url(basis, extension):
-    if extension:
-        if '|' in extension:
-            offset, text = extension.split('|', maxsplit=1)
-            return basis[:int(offset)] + text
-        else:
-            return basis + extension
-
-
-def duration_in_seconds(duration):
-    if duration:
-        match = re.match(r'(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)', duration)
-        if match:
-            parts = match.groupdict()
-            return int(timedelta(hours=int(parts['h']),
-                                 minutes=int(parts['m']),
-                                 seconds=int(parts['s'])).total_seconds())
-    else:
-        return 0
-
-
 class Database(object):
 
     def __init__(self, path):
         self.path = path
+
+    @staticmethod
+    def _qualify_url(basis, extension):
+        if extension:
+            if '|' in extension:
+                offset, text = extension.split('|', maxsplit=1)
+                return basis[:int(offset)] + text
+            else:
+                return basis + extension
+
+
+    @staticmethod
+    def _duration_in_seconds(duration):
+        if duration:
+            match = re.match(r'(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)', duration)
+            if match:
+                parts = match.groupdict()
+                return int(timedelta(hours=int(parts['h']),
+                                     minutes=int(parts['m']),
+                                     seconds=int(parts['s'])).total_seconds())
+        else:
+            return 0
+
+    @staticmethod
+    def _show_hash(show):
+        h = xxhash.xxh32()
+        h.update(str([show['channel'],
+                      show['topic'],
+                      show['title'],
+                      show['start']]).encode('utf-8'))
+        return h.hexdigest()
 
     @property
     @lru_cache(maxsize=None)
@@ -229,13 +241,14 @@ class Database(object):
                         'website': show['website'],
                         'new': show['new'] == 'true',
                         'url_http': show['url'] or None,
-                        'url_http_hd': qualify_url(show['url'], show['url_hd']),
-                        'url_http_small': qualify_url(show['url'], show['url_small']),
+                        'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
+                        'url_http_small': self._qualify_url(show['url'], show['url_small']),
                         'url_subtitles': show['url_subtitles'],
                         'start': datetime.fromtimestamp(int(show['start']), tz=pytz.utc).astimezone(local_zone),
-                        'duration': timedelta(seconds=duration_in_seconds(show['duration'])),
+                        'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
                         'age': now - datetime.fromtimestamp(int(show['start']), tz=pytz.utc)
                     }
+                    item['hash'] = self._show_hash(item)
                     last_item = item
                     yield item
 
@@ -307,7 +320,7 @@ def filter_items(items, rules, limit):
                 'url': 'url_http'
             }.get(field, field)
 
-            if field in ('description', 'region', 'size', 'channel', 'topic', 'title', 'url_http'):
+            if field in ('description', 'region', 'size', 'channel', 'topic', 'title', 'hash', 'url_http'):
                 pattern = str(pattern)
             elif field in ('duration', 'age'):
                 pattern = durationpy.from_str(pattern)
@@ -320,7 +333,7 @@ def filter_items(items, rules, limit):
 
             if operator == '=':
                 if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
-                             'topic', 'title', 'url_http'):
+                             'topic', 'title', 'hash', 'url_http'):
                     definition.append((field, partial(lambda p, v: bool(re.search(p, v, re.IGNORECASE)), pattern)))
                 elif field in ('start', ):
                     definition.append((field, partial(lambda p, v: v == p, pattern)))
@@ -328,7 +341,7 @@ def filter_items(items, rules, limit):
                     raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
             elif operator == '!=':
                 if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
-                             'topic', 'title', 'url_http'):
+                             'topic', 'title', 'hash', 'url_http'):
                     definition.append((field, partial(lambda p, v: not bool(re.search(p, v, re.IGNORECASE)), pattern)))
                 elif field in ('start', ):
                     definition.append((field, partial(lambda p, v: v != p, pattern)))
@@ -367,7 +380,7 @@ def filter_items(items, rules, limit):
 
 
 def item_table(items):
-    headers = ['channel', 'title', 'topic', 'size', 'start', 'duration', 'age', 'region']
+    headers = ['hash', 'channel', 'title', 'topic', 'size', 'start', 'duration', 'age', 'region']
     data = [[escape_item(row.get(h)) for h in headers] for row in items]
     return AsciiTable([headers] + data).table
 
@@ -416,7 +429,7 @@ def move_finished_download(source_path, cwd, target, show, file_name, file_exten
     escaped_show_details = {k: str(v).replace(os.pathsep, '_') for k, v in show.items()}
     destination_file_path = target.format(cwd=cwd,
                                           filename=file_name,
-                                          extension=file_extension,
+                                          ext=file_extension,
                                           **escaped_show_details)
 
     try:
@@ -467,6 +480,15 @@ def main():
     if sys.stderr.encoding != 'UTF-8':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
+    # rfc6266 logging fix (don't expect an upstream fix for that)
+    for logging_handler in rfc6266.LOGGER.handlers:
+        rfc6266.LOGGER.removeHandler(logging_handler)
+
+    # mute third party modules
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("rfc6266").setLevel(logging.WARNING)
+
     # ISO8601 logging
     if arguments['--verbose']:
         log_level = logging.DEBUG
@@ -474,11 +496,6 @@ def main():
         log_level = logging.ERROR
     else:
         log_level = logging.INFO
-
-    # rfc6266 logging fix (don't expect an upstream fix for that)
-    for logging_handler in rfc6266.LOGGER.handlers:
-        rfc6266.LOGGER.removeHandler(logging_handler)
-    rfc6266.LOGGER.addHandler(logging.NullHandler())
 
     logging.basicConfig(
         filename=arguments['--logfile'],

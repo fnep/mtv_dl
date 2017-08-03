@@ -9,3 +9,4 @@ tinydb
 pydash
 tqdm
 durationpy
+xxhash
