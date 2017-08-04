@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
-"""MediathekView-dl
+"""MediathekView-Commandline-Downloader
 
 Usage:
   {cmd} list [options] [-c <results>] [<filter>...]
@@ -295,7 +295,7 @@ class Database(object):
 
             elif p[0] == 'X':
                 show = dict(zip(header, p[1]))
-                if show['start'] and show['url']:  # skip live streams (no start time) and RTMP-only shows
+                if show['start'] and show['url'] and show['size']:
                     item = {
                         'channel': show['channel'] or items[-1].get('channel'),
                         'description': show['description'],
