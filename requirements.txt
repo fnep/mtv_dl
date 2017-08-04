@@ -6,6 +6,7 @@ terminaltables
 docopt
 requests
 tinydb
+tinydb-serialization
 pydash
 tqdm
 durationpy

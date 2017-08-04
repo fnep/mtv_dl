@@ -6,7 +6,7 @@
 Usage:
   {cmd} list [options] [-c <results>] [<filter>...]
   {cmd} dump [options] [<filter>...]
-  {cmd} history [--reset]
+  {cmd} history [options] [--reset]
   {cmd} download [options] [--small|--high] [<filter>...]
 
 Commands:
@@ -109,7 +109,9 @@ import requests
 import tzlocal
 from pydash import py_
 from terminaltables import AsciiTable
-from tinydb import TinyDB, Query
+from tinydb import TinyDB, Query as TinyQuery
+from tinydb_serialization import Serializer as TinySerializer
+from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
 from tqdm import tqdm
 
 import durationpy
@@ -152,6 +154,28 @@ DATABASE_URLS = [
 
 local_zone = tzlocal.get_localzone()
 now = datetime.now(tz=pytz.utc).replace(second=0, microsecond=0)
+
+
+class DateTimeSerializer(TinySerializer):
+
+    OBJ_CLASS = datetime
+
+    def encode(self, obj):
+        return obj.strftime('%Y-%m-%dT%H:%M:%S')
+
+    def decode(self, s):
+        return datetime.strptime(s, '%Y-%m-%dT%H:%M:%S')
+
+
+class TimedeltaSerializer(TinySerializer):
+
+    OBJ_CLASS = timedelta
+
+    def encode(self, obj):
+        return str(obj.total_seconds())
+
+    def decode(self, s):
+        return timedelta(seconds=float(s))
 
 
 class ConfigurationError(Exception):
@@ -220,10 +244,11 @@ class Database(object):
     @staticmethod
     def _show_hash(show: Dict) -> str:
         h = xxhash.xxh32()
-        h.update(str(show.get('channel')))
-        h.update(str(show.get('topic')))
-        h.update(str(show.get('title')))
-        h.update(str(show.get('start')))
+        h.update(show.get('channel'))
+        h.update(show.get('topic'))
+        h.update(show.get('title'))
+        h.update(str(show.get('size')))
+        h.update(str(show.get('start').timestamp()))
         return h.hexdigest()
 
     @property
@@ -258,7 +283,7 @@ class Database(object):
                       unit='shows',
                       leave=False,
                       disable=HIDE_PROGRESSBAR,
-                      desc='reading database items'):
+                      desc='Reading database items'):
 
             if p[0] == 'Filmliste':
                 if not header:
@@ -269,7 +294,7 @@ class Database(object):
             elif p[0] == 'X':
                 show = dict(zip(header, p[1]))
                 if show['start'] and show['url']:  # skip live streams (no start time) and RTMP-only shows
-                    item = ({
+                    item = {
                         'channel': show['channel'] or items[-1].get('channel'),
                         'description': show['description'],
                         'region': show['region'],
@@ -285,7 +310,7 @@ class Database(object):
                         'start': datetime.fromtimestamp(int(show['start']), tz=pytz.utc).astimezone(local_zone),
                         'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
                         'age': now - datetime.fromtimestamp(int(show['start']), tz=pytz.utc)
-                    })
+                    }
                     item['hash'] = self._show_hash(item)
                     items.append(item)
 
@@ -321,7 +346,7 @@ def download_database(destination_path: str, retries: int=5) -> int:
                         unit_scale=True,
                         leave=False,
                         disable=HIDE_PROGRESSBAR,
-                        desc='downloading database') as progress_bar:
+                        desc='Downloading database') as progress_bar:
                     for data in response.iter_content(32 * 1024):
                         progress_bar.update(len(data))
                         f.write(data)
@@ -429,8 +454,17 @@ def filter_items(items: List[Dict[str, Any]], rules: List[str]) -> List[Dict[str
             pass
 
 
+def check_history(history, shows):
+    history_row = TinyQuery()
+    for item in shows:
+        historic_download = history.get(history_row.hash == item['hash'])
+        if historic_download:
+            item['downloaded'] = historic_download['downloaded']
+        yield item
+
+
 def item_table(items):
-    headers = ['hash', 'channel', 'title', 'topic', 'size', 'start', 'duration', 'age', 'region']
+    headers = ['hash', 'channel', 'title', 'topic', 'size', 'start', 'duration', 'age', 'region', 'downloaded']
     data = [[escape_item(row.get(h)) for h in headers] for row in items]
     return AsciiTable([headers] + data).table
 
@@ -444,14 +478,14 @@ def serialize_for_json(obj):
         raise TypeError('%r is not JSON serializable' % obj)
 
 
-def download_files(destination_dir_path, target_urls):
+def download_files(destination_dir_path: str, target_urls: List[str], title: str):
 
     file_sizes = []
     with tqdm(unit='B',
               unit_scale=True,
               leave=False,
               disable=HIDE_PROGRESSBAR,
-              desc='downloading show files') as progress_bar:
+              desc='Downloading %r' % title) as progress_bar:
 
         for url in target_urls:
 
@@ -518,7 +552,7 @@ def get_m3u8_segments(base_url, hls_file_path):
                 segment = {}
 
 
-def download_hls_target(temp_dir_path, base_url, quality_preference, hls_file_path):
+def download_hls_target(temp_dir_path, base_url, title, quality_preference, hls_file_path):
 
     # get the available video streams ordered by quality
     hls_index_segments = py_ \
@@ -536,13 +570,13 @@ def download_hls_target(temp_dir_path, base_url, quality_preference, hls_file_pa
     else:
         designated_index_segment = hls_index_segments[len(hls_index_segments) // 2]
 
-    designated_index_file = list(download_files(temp_dir_path, [designated_index_segment['url']]))[0]
+    designated_index_file = list(download_files(temp_dir_path, [designated_index_segment['url']], title=title))[0]
     logging.debug('Selected HLS bandwidth is %d (available: %s).',
                   designated_index_segment['bandwidth'], ', '.join(str(s['bandwidth']) for s in hls_index_segments))
 
     # get stream segments
     hls_target_segments = list(get_m3u8_segments(base_url, designated_index_file))
-    hls_target_files = download_files(temp_dir_path, list(s['url'] for s in hls_target_segments))
+    hls_target_files = download_files(temp_dir_path, list(s['url'] for s in hls_target_segments), title=title)
     logging.debug('%d HLS segments to download.', len(hls_target_segments))
 
     # download and join the segment files
@@ -559,18 +593,18 @@ def download_hls_target(temp_dir_path, base_url, quality_preference, hls_file_pa
     return temp_file_path
 
 
-def download_show(show, quality_preference, cwd, target):
+def download_show(show, quality, cwd, target):
 
     temp_path = tempfile.mkdtemp()
     try:
 
         # show url based on quality preference
-        show_url = show["url_http%s" % quality_preference[0]] \
-                   or show["url_http%s" % quality_preference[1]] \
-                   or show["url_http%s" % quality_preference[2]]
+        show_url = show["url_http%s" % quality[0]] \
+                   or show["url_http%s" % quality[1]] \
+                   or show["url_http%s" % quality[2]]
 
         logging.debug('Downloading %r for %r on %s.', show_url, show['title'], show['start'])
-        show_file_path = list(download_files(temp_path, [show_url]))[0]
+        show_file_path = list(download_files(temp_path, [show_url], title=show['title']))[0]
         show_file_name = os.path.basename(show_file_path)
         if '.' in show_file_name:
             show_file_extension = '.%s' % os.path.basename(show_file_path).split('.')[-1]
@@ -581,7 +615,7 @@ def download_show(show, quality_preference, cwd, target):
         if show_file_extension in ('.mp4', '.flv'):
             move_finished_download(show_file_path, cwd, target, show, show_file_name, show_file_extension)
         elif show_file_extension == '.m3u8':
-            ts_file_path = download_hls_target(temp_path, show_url, quality_preference, show_file_path)
+            ts_file_path = download_hls_target(temp_path, show_url, show['title'], quality, show_file_path)
             move_finished_download(ts_file_path, cwd, target, show, show_file_name, '.ts')
         else:
             logging.error('File extension %s of %r from %s not supported.',
@@ -594,6 +628,7 @@ def download_show(show, quality_preference, cwd, target):
 
 
 def main():
+
     arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__)))
 
     # progressbar handling
@@ -631,32 +666,50 @@ def main():
 
     sys.excepthook = lambda c, e, t: logging.critical('%s: %s\n%s', c, e, ''.join(traceback.format_tb(t)))
 
-    # download and tracking
+    # temp file and download config
     cwd = os.path.abspath(arguments['--cwd']) if arguments['--cwd'] else os.getcwd()
-    history = TinyDB(os.path.join(cwd, '.history.db'), default_table='history')
     tempfile.tempdir = cwd
 
+    #  tracking
+    db_storage = TinySerializationMiddleware()
+    db_storage.register_serializer(DateTimeSerializer(), 'Datetime')
+    db_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
+    history = TinyDB(os.path.join(cwd, '.history.db'), default_table='history', storage=db_storage)
+
     try:
-        db = load_database(cwd, refresh_after=int(arguments['--refresh-after']))
+        if arguments['history']:
+            if arguments['--reset']:
+                history.purge_tables()
+            else:
+                print(item_table(sorted(history.all(), key=lambda s: s.get('downloaded'))))
 
-        item_limit = int(arguments['--count']) if arguments['list'] else None
-        items = islice(filter_items(items=db.items, rules=arguments['<filter>']), item_limit)
+        else:
+            db = load_database(cwd, refresh_after=int(arguments['--refresh-after']))
 
-        if arguments['list']:
-            print(item_table(items))
-        elif arguments['dump']:
-            print(json.dumps(list(items), default=serialize_for_json, indent=4, sort_keys=True))
-        elif arguments['history']:
-            raise NotImplemented()
-        elif arguments['download']:
-            for show in items:
-                if arguments['--high']:
-                    quality_preference = ('_hd', '', '_small')
-                elif arguments['--small']:
-                    quality_preference = ('_small', '', '_hd')
-                else:
-                    quality_preference = ('', '_hd', '_small')
-                download_show(show, quality_preference, cwd, arguments['--target'])
+            limit = int(arguments['--count']) if arguments['list'] else None
+            shows = check_history(history, islice(filter_items(items=db.items, rules=arguments['<filter>']), limit))
+
+            if arguments['list']:
+                print(item_table(shows))
+
+            elif arguments['dump']:
+                print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))
+
+            elif arguments['download']:
+                for item in shows:
+                    if not item.get('downloaded'):
+                        if arguments['--high']:
+                            quality_preference = ('_hd', '', '_small')
+                        elif arguments['--small']:
+                            quality_preference = ('_small', '', '_hd')
+                        else:
+                            quality_preference = ('', '_hd', '_small')
+                        download_show(item, quality_preference, cwd, arguments['--target'])
+                        item['downloaded'] = now
+                        history.insert(item)
+                    else:
+                        logging.debug('Skipping %r (already loaded on %s)', item['title'], item['downloaded'])
+
     except ConfigurationError as e:
         logging.error(str(e))
     except KeyboardInterrupt:
