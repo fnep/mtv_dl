@@ -21,7 +21,7 @@ Options:
   -l <path>, --logfile=<path>           Log messages to a file instead of stdout.
   -r <hours>, --refresh-after=<hours>   Update database if it is older then the given
                                         number of hours. [default: 3]
-  -w <path>, --cwd=<path>               Directory to put the databases in (default is
+  -d <path>, --dir=<path>               Directory to put the databases in (default is
                                         the current working directory).
 
 List options:
@@ -34,11 +34,11 @@ Download options:
   -h, --high                            Download best available version (if available).
   -s, --small                           Download the smallest available version (if available).
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
-                                        the parameters {{cwd}} (from the option --cwd),
+                                        the parameters {{dir}} (from the option --dir),
                                         {{filename}} (from server filename) and {{ext}} (file
                                         name extension including the dot), and all fields from
                                         the listing.
-                                        [default: {{cwd}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
+                                        [default: {{dir}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -96,7 +96,7 @@ import xxhash
 import urllib.parse
 import pickle
 from itertools import islice
-from typing import Union, Callable, List, Dict, Any
+from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 from datetime import datetime, timedelta
 from functools import lru_cache
 from functools import partial
@@ -156,6 +156,7 @@ local_zone = tzlocal.get_localzone()
 now = datetime.now(tz=pytz.utc).replace(second=0, microsecond=0)
 
 
+# noinspection PyClassHasNoInit
 class DateTimeSerializer(TinySerializer):
 
     OBJ_CLASS = datetime
@@ -167,6 +168,7 @@ class DateTimeSerializer(TinySerializer):
         return datetime.strptime(s, '%Y-%m-%dT%H:%M:%S')
 
 
+# noinspection PyClassHasNoInit
 class TimedeltaSerializer(TinySerializer):
 
     OBJ_CLASS = timedelta
@@ -454,7 +456,7 @@ def filter_items(items: List[Dict[str, Any]], rules: List[str]) -> List[Dict[str
             pass
 
 
-def check_history(history, shows):
+def check_history(history: TinyDB, shows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
     history_row = TinyQuery()
     for item in shows:
         historic_download = history.get(history_row.hash == item['hash'])
@@ -463,13 +465,13 @@ def check_history(history, shows):
         yield item
 
 
-def item_table(items):
+def item_table(shows: Iterable[Dict[str, Any]]) -> str:
     headers = ['hash', 'channel', 'title', 'topic', 'size', 'start', 'duration', 'age', 'region', 'downloaded']
-    data = [[escape_item(row.get(h)) for h in headers] for row in items]
+    data = [[escape_item(row.get(h)) for h in headers] for row in shows]
     return AsciiTable([headers] + data).table
 
 
-def serialize_for_json(obj):
+def serialize_for_json(obj: Any) -> str:
     if isinstance(obj, datetime):
         return obj.isoformat()
     elif isinstance(obj, timedelta):
@@ -478,7 +480,7 @@ def serialize_for_json(obj):
         raise TypeError('%r is not JSON serializable' % obj)
 
 
-def download_files(destination_dir_path: str, target_urls: List[str], title: str):
+def download_files(destination_dir_path: str, target_urls: List[str], title: str) -> str:
 
     file_sizes = []
     with tqdm(unit='B',
@@ -511,7 +513,7 @@ def download_files(destination_dir_path: str, target_urls: List[str], title: str
 def move_finished_download(source_path, cwd, target, show, file_name, file_extension):
 
     escaped_show_details = {k: str(v).replace(os.pathsep, '_') for k, v in show.items()}
-    destination_file_path = target.format(cwd=cwd,
+    destination_file_path = target.format(dir=cwd,
                                           filename=file_name,
                                           ext=file_extension,
                                           **escaped_show_details)
@@ -528,7 +530,7 @@ def move_finished_download(source_path, cwd, target, show, file_name, file_exten
         logging.info('Saved %r from %s to %r.', show['title'], show['start'], destination_file_path)
 
 
-def get_m3u8_segments(base_url, hls_file_path):
+def get_m3u8_segments(base_url: str, hls_file_path: str) -> Generator[Dict[str, Any], None, None]:
 
     with open(hls_file_path, 'r+') as fh:
         segment = {}
@@ -540,7 +542,7 @@ def get_m3u8_segments(base_url, hls_file_path):
                 segment = {m.group(1).lower(): m.group(2).strip() for m in re.finditer(r'([A-Z-]+)=([^,]+)', line)}
                 for key, value in segment.items():
                     if value[0] in ('"', "'") and value[0] == value[-1]:
-                        value = value[1:-1]
+                        segment[key] = value[1:-1]
                     else:
                         try:
                             segment[key] = int(value)
@@ -552,7 +554,11 @@ def get_m3u8_segments(base_url, hls_file_path):
                 segment = {}
 
 
-def download_hls_target(temp_dir_path, base_url, title, quality_preference, hls_file_path):
+def download_hls_target(temp_dir_path: str,
+                        base_url: str,
+                        title: str,
+                        quality_preference: Tuple[str, str, str],
+                        hls_file_path: str) -> str:
 
     # get the available video streams ordered by quality
     hls_index_segments = py_ \
@@ -580,7 +586,7 @@ def download_hls_target(temp_dir_path, base_url, title, quality_preference, hls_
     logging.debug('%d HLS segments to download.', len(hls_target_segments))
 
     # download and join the segment files
-    fd, temp_file_path = tempfile.mkstemp(dir=temp_dir_path)
+    fd, temp_file_path = tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')
     with open(temp_file_path, 'wb') as out_fh:
         for segment_file_path in hls_target_files:
 
@@ -593,9 +599,9 @@ def download_hls_target(temp_dir_path, base_url, title, quality_preference, hls_
     return temp_file_path
 
 
-def download_show(show, quality, cwd, target):
+def download_show(show: Dict[str, Any], quality: Tuple[str, str, str], cwd: str, target: str):
 
-    temp_path = tempfile.mkdtemp()
+    temp_path = tempfile.mkdtemp(prefix='.tmp')
     try:
 
         # show url based on quality preference
@@ -664,17 +670,24 @@ def main():
         datefmt="%Y-%m-%dT%H:%M:%S%z",
         level=log_level)
 
-    sys.excepthook = lambda c, e, t: logging.critical('%s: %s\n%s', c, e, ''.join(traceback.format_tb(t)))
+    sys.excepthook = lambda _c, _e, _t: logging.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
 
     # temp file and download config
-    cwd = os.path.abspath(arguments['--cwd']) if arguments['--cwd'] else os.getcwd()
-    tempfile.tempdir = cwd
+    cw_dir = os.path.abspath(os.path.expanduser(arguments['--dir']) if arguments['--dir'] else os.getcwd())
+    target_dir = os.path.expanduser(arguments['--target'])
+    tempfile.tempdir = cw_dir
 
     #  tracking
     db_storage = TinySerializationMiddleware()
     db_storage.register_serializer(DateTimeSerializer(), 'Datetime')
     db_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
-    history = TinyDB(os.path.join(cwd, '.history.db'), default_table='history', storage=db_storage)
+    history_file_path = os.path.join(cw_dir, '.history.db')
+    try:
+        os.makedirs(os.path.dirname(history_file_path))
+    except FileExistsError:
+        pass
+    finally:
+        history = TinyDB(history_file_path, default_table='history', storage=db_storage)
 
     try:
         if arguments['history']:
@@ -684,7 +697,7 @@ def main():
                 print(item_table(sorted(history.all(), key=lambda s: s.get('downloaded'))))
 
         else:
-            db = load_database(cwd, refresh_after=int(arguments['--refresh-after']))
+            db = load_database(cw_dir, refresh_after=int(arguments['--refresh-after']))
 
             limit = int(arguments['--count']) if arguments['list'] else None
             shows = check_history(history, islice(filter_items(items=db.items, rules=arguments['<filter>']), limit))
@@ -704,7 +717,7 @@ def main():
                             quality_preference = ('_small', '', '_hd')
                         else:
                             quality_preference = ('', '_hd', '_small')
-                        download_show(item, quality_preference, cwd, arguments['--target'])
+                        download_show(item, quality_preference, cw_dir, target_dir)
                         item['downloaded'] = now
                         history.insert(item)
                     else:
