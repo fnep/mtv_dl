@@ -94,6 +94,9 @@ import tempfile
 import codecs
 import xxhash
 import urllib.parse
+import pickle
+from itertools import islice
+from typing import Union, Callable, List, Dict, Any
 from datetime import datetime, timedelta
 from functools import lru_cache
 from functools import partial
@@ -135,7 +138,7 @@ FIELDS = {
     'neu': 'new'
 }
 
-DATABASE_FILENAME = 'Filmliste-akt.xz'
+DATABASE_FILENAME = '.Filmliste-akt.xz'
 
 DATABASE_URLS = [
     "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
@@ -155,13 +158,46 @@ class ConfigurationError(Exception):
     pass
 
 
+def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
+    """ Decorator which will use "cache_file" for caching the results of the decorated function.
+
+    :param cache_file: Either the path to the cache file as string or a callable, that
+        called with same (kw)arguments as the decorated function, returns the path to the designated
+        cache file as string.
+    """
+
+    def decorator(fn):
+        # noinspection PyBroadException
+        def wrapped(*args, **kwargs):
+            _cache_file = cache_file(*args, **kwargs) if callable(cache_file) else cache_file
+            try:
+                with open(_cache_file, 'rb') as cache_handle:
+                    logging.debug("Using cached result from %r.", _cache_file)
+                    return pickle.load(cache_handle)
+            except:
+                res = fn(*args, **kwargs)
+                with open(_cache_file, 'wb') as cache_handle:
+                    logging.debug("Saving result to cache %r.", _cache_file)
+                    try:
+                        pickle.dump(res, cache_handle)
+                    except:
+                        pass
+                return res
+
+        return wrapped
+
+    return decorator
+
+
 class Database(object):
 
-    def __init__(self, path):
+    path = None
+
+    def __init__(self, path: str):
         self.path = path
 
     @staticmethod
-    def _qualify_url(basis, extension):
+    def _qualify_url(basis: str, extension: str) -> str:
         if extension:
             if '|' in extension:
                 offset, text = extension.split('|', maxsplit=1)
@@ -169,9 +205,8 @@ class Database(object):
             else:
                 return basis + extension
 
-
     @staticmethod
-    def _duration_in_seconds(duration):
+    def _duration_in_seconds(duration: str) -> int:
         if duration:
             match = re.match(r'(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)', duration)
             if match:
@@ -183,12 +218,12 @@ class Database(object):
             return 0
 
     @staticmethod
-    def _show_hash(show):
+    def _show_hash(show: Dict) -> str:
         h = xxhash.xxh32()
-        h.update(str([show['channel'],
-                      show['topic'],
-                      show['title'],
-                      show['start']]).encode('utf-8'))
+        h.update(str(show.get('channel')))
+        h.update(str(show.get('topic')))
+        h.update(str(show.get('title')))
+        h.update(str(show.get('start')))
         return h.hexdigest()
 
     @property
@@ -199,8 +234,8 @@ class Database(object):
         return json.load(reader(lzma.open(self.path, 'rb')), object_pairs_hook=lambda _pairs: _pairs)
 
     @property
-    @lru_cache(maxsize=None)
-    def meta(self):
+    @pickle_cache(lambda db: db.path + '.meta.cache')
+    def meta(self) -> Dict[str, Any]:
         for p in self._pairs:
             if p[0] == 'Filmliste':
                 return {
@@ -212,10 +247,11 @@ class Database(object):
                 }
 
     @property
-    def items(self):
+    @pickle_cache(lambda db: db.path + '.items.cache')
+    def items(self) -> List[Dict[str, Any]]:
 
+        items = []
         header = []
-        last_item = {}
 
         logging.debug('Loading database items.')
         for p in tqdm(self._pairs[1:],
@@ -233,13 +269,13 @@ class Database(object):
             elif p[0] == 'X':
                 show = dict(zip(header, p[1]))
                 if show['start'] and show['url']:  # skip live streams (no start time) and RTMP-only shows
-                    item = {
-                        'channel': show['channel'] or last_item.get('channel'),
+                    item = ({
+                        'channel': show['channel'] or items[-1].get('channel'),
                         'description': show['description'],
                         'region': show['region'],
                         'size': int(show['size']) if show['size'] else 0,
                         'title': show['title'],
-                        'topic': show['topic'] or last_item.get('topic'),
+                        'topic': show['topic'] or items[-1].get('topic'),
                         'website': show['website'],
                         'new': show['new'] == 'true',
                         'url_http': show['url'] or None,
@@ -249,13 +285,29 @@ class Database(object):
                         'start': datetime.fromtimestamp(int(show['start']), tz=pytz.utc).astimezone(local_zone),
                         'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
                         'age': now - datetime.fromtimestamp(int(show['start']), tz=pytz.utc)
-                    }
+                    })
                     item['hash'] = self._show_hash(item)
-                    last_item = item
-                    yield item
+                    items.append(item)
+
+        return items
+
+    def clear_caches(self):
+        """ Drop the pickled cache files for this database. """
+
+        def _delete_cache_file(path: str):
+            # noinspection PyBroadException
+            try:
+                os.unlink(path)
+            except:
+                pass
+            else:
+                logging.debug("Dropped results cache %r.", path)
+
+        _delete_cache_file(self.path + '.items.cache')
+        _delete_cache_file(self.path + '.meta.cache')
 
 
-def download_database(destination_path, retries=5):
+def download_database(destination_path: str, retries: int=5) -> int:
     while retries:
         retries -= 1
         try:
@@ -283,7 +335,7 @@ def download_database(destination_path, retries=5):
     raise requests.exceptions.HTTPError('retry limit reached, giving up')
 
 
-def load_database(cwd, refresh_after):
+def load_database(cwd: str, refresh_after: int) -> Database:
     database_path = os.path.join(cwd, DATABASE_FILENAME)
     try:
         db = Database(database_path)
@@ -291,6 +343,8 @@ def load_database(cwd, refresh_after):
         logging.debug('Database age is %s.', database_age)
         if database_age < timedelta(hours=refresh_after):
             return db
+        else:
+            db.clear_caches()
 
     except OSError as e:
         logging.debug('Failed to open database: %s', e)
@@ -299,7 +353,7 @@ def load_database(cwd, refresh_after):
     return Database(database_path)
 
 
-def escape_item(obj):
+def escape_item(obj: Any) -> str:
     if isinstance(obj, datetime):
         return obj.isoformat()
     elif isinstance(obj, timedelta):
@@ -308,7 +362,7 @@ def escape_item(obj):
         return str(obj)
 
 
-def filter_items(items, rules, limit):
+def filter_items(items: List[Dict[str, Any]], rules: List[str]) -> List[Dict[str, Any]]:
 
     definition = []
     for f in rules:
@@ -364,21 +418,15 @@ def filter_items(items, rules, limit):
             raise ConfigurationError('Invalid filter definition. '
                                      'Property and filter rule expected separated by an operator.')
 
-    count = 0
     for row in items:
-        if limit and count > limit:
-            items.close()
-        else:
-            try:
-                if not definition:
-                    count += 1
+        try:
+            if not definition:
+                yield row
+            else:
+                if all(check(row.get(field)) for field, check in definition):
                     yield row
-                else:
-                    if all(check(row.get(field)) for field, check in definition):
-                        count += 1
-                        yield row
-            except (ValueError, TypeError):
-                pass
+        except (ValueError, TypeError):
+            pass
 
 
 def item_table(items):
@@ -585,14 +633,14 @@ def main():
 
     # download and tracking
     cwd = os.path.abspath(arguments['--cwd']) if arguments['--cwd'] else os.getcwd()
-    history_db = TinyDB(os.path.join(cwd, 'history.db'), default_table='history')
+    history = TinyDB(os.path.join(cwd, '.history.db'), default_table='history')
     tempfile.tempdir = cwd
 
     try:
         db = load_database(cwd, refresh_after=int(arguments['--refresh-after']))
 
         item_limit = int(arguments['--count']) if arguments['list'] else None
-        items = filter_items(items=db.items, rules=arguments['<filter>'], limit=item_limit)
+        items = islice(filter_items(items=db.items, rules=arguments['<filter>']), item_limit)
 
         if arguments['list']:
             print(item_table(items))
@@ -601,7 +649,7 @@ def main():
         elif arguments['history']:
             raise NotImplemented()
         elif arguments['download']:
-            for show in list(items):
+            for show in items:
                 if arguments['--high']:
                     quality_preference = ('_hd', '', '_small')
                 elif arguments['--small']:

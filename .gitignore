@@ -1,4 +1,6 @@
 *.py[cod]
 .idea
-/history.db
-/Filmliste-akt.xz
+/.history.db
+/.Filmliste-akt.xz
+/.Filmliste-akt.xz.meta.cache
+/.Filmliste-akt.xz.items.cache
