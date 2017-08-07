@@ -40,6 +40,9 @@ Download options:
                                         name extension including the dot), and all fields from
                                         the listing.
                                         [default: {{dir}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
+  --mark-only                           Do not download any show, but mark it as downloaded
+                                        in the history. This is to initialize a new filter
+                                        if upcoming shows are wanted.
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -720,15 +723,20 @@ def main():
             elif arguments['download']:
                 for item in shows:
                     if not item.get('downloaded'):
-                        if arguments['--high']:
-                            quality_preference = ('_hd', '', '_small')
-                        elif arguments['--small']:
-                            quality_preference = ('_small', '', '_hd')
+                        if not arguments['--mark-only']:
+                            if arguments['--high']:
+                                quality_preference = ('_hd', '', '_small')
+                            elif arguments['--small']:
+                                quality_preference = ('_small', '', '_hd')
+                            else:
+                                quality_preference = ('', '_hd', '_small')
+                            download_show(item, quality_preference, cw_dir, target_dir)
+                            item['downloaded'] = now
+                            history.insert(item)
                         else:
-                            quality_preference = ('', '_hd', '_small')
-                        download_show(item, quality_preference, cw_dir, target_dir)
-                        item['downloaded'] = now
-                        history.insert(item)
+                            item['downloaded'] = now
+                            history.insert(item)
+                            logging.info('Marked %r from %s as downloaded.', item['title'], item['start'])
                     else:
                         logging.debug('Skipping %r (already loaded on %s)', item['title'], item['downloaded'])
 
