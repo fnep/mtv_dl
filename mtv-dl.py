@@ -121,6 +121,7 @@ import codecs
 import xxhash
 import urllib.parse
 import pickle
+import shlex
 from itertools import islice
 from itertools import chain
 from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
@@ -665,13 +666,12 @@ def download_show(show: Dict[str, Any], quality: Tuple[str, str, str], cwd: str,
 
 
 def read_filter_sets(sets_file_path, default_filter):
-    import shlex
     try:
         with open(os.path.expanduser(sets_file_path), 'r+') as set_fh:
             for line in set_fh:
                 if line.strip():
                     yield default_filter + shlex.split(line)
-    except OSError:
+    except (OSError, AttributeError):
         yield default_filter
 
 
