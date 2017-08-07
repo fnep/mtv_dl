@@ -475,6 +475,7 @@ def filter_items(items: List[Dict[str, Any]],
             raise ConfigurationError('Invalid filter definition. '
                                      'Property and filter rule expected separated by an operator.')
 
+    logging.debug('Applying filter: %s', ', '.join(rules))
     for row in items:
         if not include_future and row['start'] > now:
             continue
