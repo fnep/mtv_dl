@@ -4,10 +4,10 @@
 """MediathekView-Commandline-Downloader
 
 Usage:
-  {cmd} list [options] [-c <results>] [<filter>...]
-  {cmd} dump [options] [<filter>...]
+  {cmd} list [options] [--sets=<file>] [--count=<results>] [<filter>...]
+  {cmd} dump [options] [--sets=<file>] [<filter>...]
+  {cmd} download [options] [--sets=<file>] [--low|--high] [<filter>...]
   {cmd} history [options] [--reset]
-  {cmd} download [options] [--small|--high] [<filter>...]
 
 Commands:
   list                                  Show the list of query results as ascii table.
@@ -33,7 +33,7 @@ History options:
 
 Download options:
   -h, --high                            Download best available version (if available).
-  -s, --small                           Download the smallest available version (if available).
+  -l, --low                             Download the smallest available version (if available).
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{dir}} (from the option --dir),
                                         {{filename}} (from server filename) and {{ext}} (file
@@ -43,6 +43,9 @@ Download options:
   --mark-only                           Do not download any show, but mark it as downloaded
                                         in the history. This is to initialize a new filter
                                         if upcoming shows are wanted.
+  -s <file>, --sets=<file>              A file to load different sets of filters (see below
+                                        for details). In the file every different filter set
+                                        is expected to be on a new line.
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -82,6 +85,25 @@ Filters:
   As many filters as needed may be given as separated arguments (separated  with space).
   For a show to get considered, _all_ given filter criteria must met.
 
+Filter sets:
+
+  In commandline with a single run one can only give one set of filters. In most cases
+  this means one can only select a single show to list or download with one run.
+
+  For --sets, a file should be given, where every line contains the same filter arguments
+  that one would give on the commandline. The lines are filtered one after another and
+  then processed together.
+
+  A text file could look for example like this:
+
+    channel=ARD topic='extra 3' title!=spezial duration+20m
+    channel=ZDF topic='Die Anstalt' duration+45m
+    channel=ZDF topic=heute-show duration+20m
+
+  If additional filters where given through the commandline, all filter sets are extended
+  by these filters. Be aware that this is not faster then running all queries separately
+  but just more comfortable.
+
  """
 
 import json
@@ -100,6 +122,7 @@ import xxhash
 import urllib.parse
 import pickle
 from itertools import islice
+from itertools import chain
 from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -641,6 +664,17 @@ def download_show(show: Dict[str, Any], quality: Tuple[str, str, str], cwd: str,
         shutil.rmtree(temp_path)
 
 
+def read_filter_sets(sets_file_path, default_filter):
+    import shlex
+    try:
+        with open(os.path.expanduser(sets_file_path), 'r+') as set_fh:
+            for line in set_fh:
+                if line.strip():
+                    yield default_filter + shlex.split(line)
+    except OSError:
+        yield default_filter
+
+
 def main():
 
     arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__)))
@@ -709,10 +743,14 @@ def main():
 
             limit = int(arguments['--count']) if arguments['list'] else None
             shows = check_history(history,
-                                  islice(filter_items(items=db.items,
-                                                      rules=arguments['<filter>'],
-                                                      include_future=arguments['--include-future']),
-                                         limit or None))
+                                  islice(
+                                      chain(*(filter_items(items=db.items,
+                                                           rules=filter_set,
+                                                           include_future=arguments['--include-future'])
+                                              for filter_set
+                                              in read_filter_sets(sets_file_path=arguments['--sets'],
+                                                                  default_filter=arguments['<filter>']))),
+                                      limit or None))
 
             if arguments['list']:
                 print(item_table(shows))
@@ -726,7 +764,7 @@ def main():
                         if not arguments['--mark-only']:
                             if arguments['--high']:
                                 quality_preference = ('_hd', '', '_small')
-                            elif arguments['--small']:
+                            elif arguments['--low']:
                                 quality_preference = ('_small', '', '_hd')
                             else:
                                 quality_preference = ('', '_hd', '_small')
