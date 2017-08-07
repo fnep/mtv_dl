@@ -23,6 +23,7 @@ Options:
                                         number of hours. [default: 3]
   -d <path>, --dir=<path>               Directory to put the databases in (default is
                                         the current working directory).
+  --include-future                      Include shows that have not yet started.
 
 List options:
   -c <results>, --count=<results>       Limit the number of results. [default: 50]
@@ -389,7 +390,9 @@ def escape_item(obj: Any) -> str:
         return str(obj)
 
 
-def filter_items(items: List[Dict[str, Any]], rules: List[str]) -> List[Dict[str, Any]]:
+def filter_items(items: List[Dict[str, Any]],
+                 rules: List[str],
+                 include_future: bool=False) -> List[Dict[str, Any]]:
 
     definition = []
     for f in rules:
@@ -446,6 +449,8 @@ def filter_items(items: List[Dict[str, Any]], rules: List[str]) -> List[Dict[str
                                      'Property and filter rule expected separated by an operator.')
 
     for row in items:
+        if not include_future and row['start'] > now:
+            continue
         try:
             if not definition:
                 yield row
@@ -700,7 +705,11 @@ def main():
             db = load_database(cw_dir, refresh_after=int(arguments['--refresh-after']))
 
             limit = int(arguments['--count']) if arguments['list'] else None
-            shows = check_history(history, islice(filter_items(items=db.items, rules=arguments['<filter>']), limit))
+            shows = check_history(history,
+                                  islice(filter_items(items=db.items,
+                                                      rules=arguments['<filter>'],
+                                                      include_future=arguments['--include-future']),
+                                         limit or None))
 
             if arguments['list']:
                 print(item_table(shows))
