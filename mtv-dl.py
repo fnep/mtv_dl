@@ -543,7 +543,7 @@ def download_files(destination_dir_path: str, target_urls: List[str], title: str
 
 def move_finished_download(source_path, cwd, target, show, file_name, file_extension):
 
-    escaped_show_details = {k: str(v).replace(os.pathsep, '_') for k, v in show.items()}
+    escaped_show_details = {k: str(v).replace(os.path.sep, '_') for k, v in show.items()}
     destination_file_path = target.format(dir=cwd,
                                           filename=file_name,
                                           ext=file_extension,
