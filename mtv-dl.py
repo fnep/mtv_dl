@@ -248,17 +248,19 @@ class Database(object):
 
     path = None
 
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         self.path = path
 
     @staticmethod
-    def _qualify_url(basis: str, extension: str) -> str:
+    def _qualify_url(basis: str, extension: str) -> Union[str, None]:
         if extension:
             if '|' in extension:
                 offset, text = extension.split('|', maxsplit=1)
                 return basis[:int(offset)] + text
             else:
                 return basis + extension
+        else:
+            return None
 
     @staticmethod
     def _duration_in_seconds(duration: str) -> int:
@@ -269,8 +271,7 @@ class Database(object):
                 return int(timedelta(hours=int(parts['h']),
                                      minutes=int(parts['m']),
                                      seconds=int(parts['s'])).total_seconds())
-        else:
-            return 0
+        return 0
 
     @staticmethod
     def _show_hash(show: Dict) -> str:
@@ -282,17 +283,17 @@ class Database(object):
         h.update(str(show.get('start').timestamp()))
         return h.hexdigest()
 
-    @property
+    @property  # type: ignore
     @lru_cache(maxsize=None)
-    def _pairs(self):
+    def _pairs(self) -> List[str]:
         logging.debug('Opening the database.')
         reader = codecs.getreader("utf-8")
-        return json.load(reader(lzma.open(self.path, 'rb')), object_pairs_hook=lambda _pairs: _pairs)
+        return json.load(reader(lzma.open(self.path, 'rb')), object_pairs_hook=lambda _pairs: _pairs)  # type: ignore
 
-    @property
+    @property  # type: ignore
     @pickle_cache(lambda db: db.path + '.meta.cache')
     def meta(self) -> Dict[str, Any]:
-        for p in self._pairs:
+        for p in self._pairs:  # type: ignore
             if p[0] == 'Filmliste':
                 return {
                     # p[1][0] is local date, p[1][1] is gmt date
@@ -301,16 +302,17 @@ class Database(object):
                     'crawler_agent': p[1][3],
                     'list_id': p[1][4],
                 }
+        return {}
 
-    @property
+    @property  # type: ignore
     @pickle_cache(lambda db: db.path + '.items.cache')
     def items(self) -> List[Dict[str, Any]]:
 
-        items = []
-        header = []
+        items: list = []
+        header: list = []
 
         logging.debug('Loading database items.')
-        for p in tqdm(self._pairs[1:],
+        for p in tqdm(self._pairs[1:],  # type: ignore
                       unit='shows',
                       leave=False,
                       disable=HIDE_PROGRESSBAR,
@@ -369,7 +371,7 @@ def download_database(destination_path: str, retries: int=5) -> int:
         try:
             response = requests.get(random.choice(DATABASE_URLS), stream=True)
             response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
+            total_size = int(response.headers.get('content-length', 0))  # type: ignore
             with open(destination_path, 'wb') as f:
                 with tqdm(
                         total=total_size,
@@ -420,14 +422,16 @@ def escape_item(obj: Any) -> str:
 
 def filter_items(items: List[Dict[str, Any]],
                  rules: List[str],
-                 include_future: bool=False) -> List[Dict[str, Any]]:
+                 include_future: bool=False) -> Generator[Dict[str, Any], None, None]:
 
     definition = []
     for f in rules:
         match = re.match(r'^(?P<field>\w+)(?P<operator>(?:=|!=|\+|-|\W+))(?P<pattern>.*)$', f)
         if match:
 
-            field, operator, pattern = match.group('field'), match.group('operator'), match.group('pattern')
+            field, operator, pattern = match.group('field'), \
+                                       match.group('operator'), \
+                                       match.group('pattern')  # type: str, str, Any
 
             # replace odd names
             field = {
@@ -514,7 +518,7 @@ def serialize_for_json(obj: Any) -> str:
         raise TypeError('%r is not JSON serializable' % obj)
 
 
-def download_files(destination_dir_path: str, target_urls: List[str], title: str) -> str:
+def download_files(destination_dir_path: str, target_urls: List[str], title: str) -> Generator[str, None, None]:
 
     file_sizes = []
     with tqdm(unit='B',
@@ -527,7 +531,7 @@ def download_files(destination_dir_path: str, target_urls: List[str], title: str
 
             # determine file size for progressbar
             response = requests.get(url, stream=True)
-            file_sizes.append(int(response.headers.get('content-length', 0)))
+            file_sizes.append(int(response.headers.get('content-length', 0)))  # type: ignore
             progress_bar.total = sum(file_sizes) / len(file_sizes) * len(target_urls)
 
             # determine file name and destination
@@ -567,7 +571,7 @@ def move_finished_download(source_path, cwd, target, show, file_name, file_exten
 def get_m3u8_segments(base_url: str, hls_file_path: str) -> Generator[Dict[str, Any], None, None]:
 
     with open(hls_file_path, 'r+') as fh:
-        segment = {}
+        segment: Dict = {}
         for line in fh:
             if not line:
                 continue
