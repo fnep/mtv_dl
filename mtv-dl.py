@@ -726,16 +726,16 @@ def main():
     tempfile.tempdir = cw_dir
 
     #  tracking
-    db_storage = TinySerializationMiddleware()
-    db_storage.register_serializer(DateTimeSerializer(), 'Datetime')
-    db_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
+    history_storage = TinySerializationMiddleware()
+    history_storage.register_serializer(DateTimeSerializer(), 'Datetime')
+    history_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
     history_file_path = os.path.join(cw_dir, '.history.db')
     try:
         os.makedirs(os.path.dirname(history_file_path))
     except FileExistsError:
         pass
     finally:
-        history = TinyDB(history_file_path, default_table='history', storage=db_storage)
+        history = TinyDB(history_file_path, default_table='history', storage=history_storage)
 
     try:
         if arguments['history']:
@@ -754,9 +754,10 @@ def main():
             db = load_database(cw_dir, refresh_after=int(arguments['--refresh-after']))
 
             limit = int(arguments['--count']) if arguments['list'] else None
+            db_items = db.items
             shows = check_history(history,
                                   islice(
-                                      chain(*(filter_items(items=db.items,
+                                      chain(*(filter_items(items=db_items,
                                                            rules=filter_set,
                                                            include_future=arguments['--include-future'])
                                               for filter_set
