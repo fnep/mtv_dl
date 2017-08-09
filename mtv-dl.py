@@ -7,7 +7,7 @@ Usage:
   {cmd} list [options] [--sets=<file>] [--count=<results>] [<filter>...]
   {cmd} dump [options] [--sets=<file>] [<filter>...]
   {cmd} download [options] [--sets=<file>] [--low|--high] [<filter>...]
-  {cmd} history [options] [--reset]
+  {cmd} history [options] [--reset|--remove=<hash>]
 
 Commands:
   list                                  Show the list of query results as ascii table.
@@ -30,6 +30,7 @@ List options:
 
 History options:
   --reset                               Reset the list of downloaded shows.
+  --remove=<hash>                       Remove a single show from the history.
 
 Download options:
   -h, --high                            Download best available version (if available).
@@ -672,7 +673,7 @@ def read_filter_sets(sets_file_path, default_filter):
             for line in set_fh:
                 if line.strip():
                     yield default_filter + shlex.split(line)
-    except (OSError, AttributeError):
+    except (OSError, AttributeError, TypeError):
         yield default_filter
 
 
@@ -736,6 +737,12 @@ def main():
         if arguments['history']:
             if arguments['--reset']:
                 history.purge_tables()
+            elif arguments['--remove']:
+                history_row = TinyQuery()
+                if history.remove(history_row.hash == arguments['--remove']):
+                    logging.info('Removed %s from history.', arguments['--remove'])
+                else:
+                    logging.warning('Could not remove %s (not found).', arguments['--remove'])
             else:
                 print(item_table(sorted(history.all(), key=lambda s: s.get('downloaded'))))
 
