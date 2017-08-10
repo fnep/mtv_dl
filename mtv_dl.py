@@ -317,17 +317,21 @@ class Database(object):
                 response = requests.get(random.choice(DATABASE_URLS), stream=True)
                 response.raise_for_status()
                 total_size = int(response.headers.get('content-length', 0))  # type: ignore
-                with tempfile.NamedTemporaryFile(mode='wb') as destination_file:
-                    with tqdm(total=total_size,
-                              unit='B',
-                              unit_scale=True,
-                              leave=False,
-                              disable=HIDE_PROGRESSBAR,
-                              desc='Downloading database') as progress_bar:
-                        for data in response.iter_content(32 * 1024):
-                            progress_bar.update(len(data))
-                            destination_file.write(data)
-                    yield destination_file
+                fd, temp_file_path = tempfile.mkstemp(prefix='.tmp')
+                try:
+                    with open(temp_file_path, 'wb') as fh:
+                        with tqdm(total=total_size,
+                                  unit='B',
+                                  unit_scale=True,
+                                  leave=False,
+                                  disable=HIDE_PROGRESSBAR,
+                                  desc='Downloading database') as progress_bar:
+                            for data in response.iter_content(32 * 1024):
+                                progress_bar.update(len(data))
+                                fh.write(data)
+                        yield temp_file_path
+                finally:
+                    os.unlink(temp_file_path)
             except requests.exceptions.HTTPError as e:
                 if retries:
                     logging.debug('Database download failed (%d more retries): %s' % (retries, e))
@@ -350,8 +354,8 @@ class Database(object):
         header = []  # type: List
 
         logging.debug('Opening the database.')
-        with self._filmliste as filmliste:
-            with lzma.open(filmliste.name) as fh:
+        with self._filmliste as filmliste_path:
+            with lzma.open(filmliste_path) as fh:
 
                 logging.debug('Loading database items.')
                 reader = codecs.getreader("utf-8")
