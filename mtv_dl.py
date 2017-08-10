@@ -398,6 +398,7 @@ def download_database(destination_path: str, retries: int=5) -> int:
     while retries:
         retries -= 1
         try:
+            os.makedirs(os.path.dirname(destination_path))
             response = requests.get(random.choice(DATABASE_URLS), stream=True)
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))  # type: ignore
@@ -523,13 +524,58 @@ def filter_items(items: List[Dict[str, Any]],
             pass
 
 
-def check_history(history: TinyDB, shows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
-    history_row = TinyQuery()
-    for item in shows:
-        historic_download = history.get(history_row.hash == item['hash'])
-        if historic_download:
-            item['downloaded'] = historic_download['downloaded']
-        yield item
+class History(object):
+
+    def __init__(self, cwd):
+        self._cwd = cwd
+
+    @property
+    @contextmanager
+    def db(self) -> TinyDB:
+        history_storage = TinySerializationMiddleware()
+        history_storage.register_serializer(DateTimeSerializer(), 'Datetime')
+        history_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
+        history_file_path = os.path.join(self._cwd, '.history.db')
+        try:
+            os.makedirs(os.path.dirname(history_file_path))
+        except FileExistsError:
+            pass
+        finally:
+            db = TinyDB(history_file_path, default_table='history', storage=history_storage)
+            yield db
+            db.close()
+
+    @property
+    def all(self):
+        with self.db as db:
+            return db.all()
+
+    def check(self, shows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+        row = TinyQuery()
+        with self.db as db:
+            for item in shows:
+                historic_download = db.get(row.hash == item['hash'])
+                if historic_download:
+                    item['downloaded'] = historic_download['downloaded']
+                yield item
+
+    def purge(self):
+        with self.db as db:
+            return db.purge_tables()
+
+    def remove(self, show_hash):
+        row = TinyQuery()
+        with self.db as db:
+            if db.remove(row.hash == show_hash):
+                logging.info('Removed %s from history.', show_hash)
+                return True
+            else:
+                logging.warning('Could not remove %s (not found).', show_hash)
+                return False
+
+    def insert(self, show):
+        with self.db as db:
+            return db.insert(show)
 
 
 def item_table(shows: Iterable[Dict[str, Any]]) -> str:
@@ -757,44 +803,30 @@ def main():
     tempfile.tempdir = cw_dir
 
     #  tracking
-    history_storage = TinySerializationMiddleware()
-    history_storage.register_serializer(DateTimeSerializer(), 'Datetime')
-    history_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
-    history_file_path = os.path.join(cw_dir, '.history.db')
-    try:
-        os.makedirs(os.path.dirname(history_file_path))
-    except FileExistsError:
-        pass
-    finally:
-        history = TinyDB(history_file_path, default_table='history', storage=history_storage)
+    history = History(cwd=cw_dir)
 
     try:
         if arguments['history']:
             if arguments['--reset']:
-                history.purge_tables()
+                history.purge()
             elif arguments['--remove']:
-                history_row = TinyQuery()
-                if history.remove(history_row.hash == arguments['--remove']):
-                    logging.info('Removed %s from history.', arguments['--remove'])
-                else:
-                    logging.warning('Could not remove %s (not found).', arguments['--remove'])
+                history.remove(arguments['--remove'])
             else:
-                print(item_table(sorted(history.all(), key=lambda s: s.get('downloaded'))))
+                print(item_table(sorted(history.all, key=lambda s: s.get('downloaded'))))
 
         else:
             db = load_database(cw_dir, refresh_after=int(arguments['--refresh-after']))
-
             limit = int(arguments['--count']) if arguments['list'] else None
             db_items = db.items
-            shows = check_history(history,
-                                  islice(
-                                      chain(*(filter_items(items=db_items,
-                                                           rules=filter_set,
-                                                           include_future=arguments['--include-future'])
-                                              for filter_set
-                                              in read_filter_sets(sets_file_path=arguments['--sets'],
-                                                                  default_filter=arguments['<filter>']))),
-                                      limit or None))
+            shows = history.check(
+                islice(
+                    chain(*(filter_items(items=db_items,
+                                         rules=filter_set,
+                                         include_future=arguments['--include-future'])
+                            for filter_set
+                            in read_filter_sets(sets_file_path=arguments['--sets'],
+                                                default_filter=arguments['<filter>']))),
+                    limit or None))
 
             if arguments['list']:
                 print(item_table(shows))
