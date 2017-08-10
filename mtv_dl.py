@@ -703,12 +703,12 @@ def download_show(show: Dict[str, Any], quality: Tuple[str, str, str], cwd: str,
 
 
 def read_filter_sets(sets_file_path, default_filter):
-    try:
+    if sets_file_path:
         with open(os.path.expanduser(sets_file_path), 'r+') as set_fh:
             for line in set_fh:
                 if line.strip():
                     yield default_filter + shlex.split(line)
-    except (OSError, AttributeError, TypeError):
+    else:
         yield default_filter
 
 
