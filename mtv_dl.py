@@ -317,7 +317,7 @@ class Database(object):
         reader = codecs.getreader("utf-8")
         with lzma.open(self.path, 'rb') as fh:
             with flocked(fh, timeout=3600):
-                return json.load(fh, object_pairs_hook=lambda _pairs: _pairs)  # type: ignore
+                return json.load(reader(fh), object_pairs_hook=lambda _pairs: _pairs)  # type: ignore
 
     @property  # type: ignore
     @pickle_cache(lambda db: db.path + '.meta.cache')
@@ -337,8 +337,8 @@ class Database(object):
     @pickle_cache(lambda db: db.path + '.items.cache')
     def items(self) -> List[Dict[str, Any]]:
 
-        items: list = []
-        header: list = []
+        items = []  # type: List
+        header = []  # type: List
 
         logging.debug('Loading database items.')
         for p in tqdm(self._pairs[1:],  # type: ignore
@@ -602,7 +602,7 @@ def move_finished_download(source_path, cwd, target, show, file_name, file_exten
 def get_m3u8_segments(base_url: str, hls_file_path: str) -> Generator[Dict[str, Any], None, None]:
 
     with open(hls_file_path, 'r+') as fh:
-        segment: Dict = {}
+        segment = {}  # type: Dict
         for line in fh:
             if not line:
                 continue
