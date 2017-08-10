@@ -124,6 +124,8 @@ import xxhash
 import urllib.parse
 import pickle
 import shlex
+import fcntl
+from contextlib import contextmanager
 from itertools import islice
 from itertools import chain
 from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
@@ -214,6 +216,28 @@ class ConfigurationError(Exception):
     pass
 
 
+@contextmanager
+def flocked(fd, timeout=1.0, sleep=0.1):
+    """ Contextmanager to lock a file descriptor for exclusive reading/writing. """
+
+    remaining_time = timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                yield
+            except IOError:
+                if remaining_time or not timeout:
+                    time.sleep(sleep)
+                else:
+                    raise
+            else:
+                break
+
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
     """ Decorator which will use "cache_file" for caching the results of the decorated function.
 
@@ -228,16 +252,18 @@ def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
             _cache_file = cache_file(*args, **kwargs) if callable(cache_file) else cache_file
             try:
                 with open(_cache_file, 'rb') as cache_handle:
-                    logging.debug("Using cached result from %r.", _cache_file)
-                    return pickle.load(cache_handle)
+                    with flocked(cache_handle, timeout=60):
+                        logging.debug("Using cached result from %r.", _cache_file)
+                        return pickle.load(cache_handle)
             except:
                 res = fn(*args, **kwargs)
                 with open(_cache_file, 'wb') as cache_handle:
-                    logging.debug("Saving result to cache %r.", _cache_file)
-                    try:
-                        pickle.dump(res, cache_handle)
-                    except:
-                        pass
+                    with flocked(cache_handle, timeout=60):
+                        logging.debug("Saving result to cache %r.", _cache_file)
+                        try:
+                            pickle.dump(res, cache_handle)
+                        except:
+                            pass
                 return res
 
         return wrapped
@@ -289,7 +315,9 @@ class Database(object):
     def _pairs(self) -> List[str]:
         logging.debug('Opening the database.')
         reader = codecs.getreader("utf-8")
-        return json.load(reader(lzma.open(self.path, 'rb')), object_pairs_hook=lambda _pairs: _pairs)  # type: ignore
+        with lzma.open(self.path, 'rb') as fh:
+            with flocked(fh, timeout=3600):
+                return json.load(fh, object_pairs_hook=lambda _pairs: _pairs)  # type: ignore
 
     @property  # type: ignore
     @pickle_cache(lambda db: db.path + '.meta.cache')
@@ -374,16 +402,16 @@ def download_database(destination_path: str, retries: int=5) -> int:
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))  # type: ignore
             with open(destination_path, 'wb') as f:
-                with tqdm(
-                        total=total_size,
-                        unit='B',
-                        unit_scale=True,
-                        leave=False,
-                        disable=HIDE_PROGRESSBAR,
-                        desc='Downloading database') as progress_bar:
-                    for data in response.iter_content(32 * 1024):
-                        progress_bar.update(len(data))
-                        f.write(data)
+                with flocked(f, timeout=3600):
+                    with tqdm(total=total_size,
+                              unit='B',
+                              unit_scale=True,
+                              leave=False,
+                              disable=HIDE_PROGRESSBAR,
+                              desc='Downloading database') as progress_bar:
+                        for data in response.iter_content(32 * 1024):
+                            progress_bar.update(len(data))
+                            f.write(data)
             return os.stat(destination_path).st_size
         except requests.exceptions.HTTPError as e:
             if retries:
