@@ -317,7 +317,7 @@ class Database(object):
                 response = requests.get(random.choice(DATABASE_URLS), stream=True)
                 response.raise_for_status()
                 total_size = int(response.headers.get('content-length', 0))  # type: ignore
-                fd, temp_file_path = tempfile.mkstemp(prefix='.tmp')
+                fd, temp_file_path = tempfile.mkstemp(prefix='.tmp', suffix='.xz')
                 try:
                     with open(temp_file_path, 'wb') as fh:
                         with tqdm(total=total_size,
@@ -329,7 +329,7 @@ class Database(object):
                             for data in response.iter_content(32 * 1024):
                                 progress_bar.update(len(data))
                                 fh.write(data)
-                        yield temp_file_path
+                    yield temp_file_path
                 finally:
                     os.unlink(temp_file_path)
             except requests.exceptions.HTTPError as e:
