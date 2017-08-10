@@ -4,3 +4,6 @@
 /.Filmliste-akt.xz
 /.Filmliste-akt.xz.meta.cache
 /.Filmliste-akt.xz.items.cache
+/.mypy_cache
+/dist
+/MANIFEST
