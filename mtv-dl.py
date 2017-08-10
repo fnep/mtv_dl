@@ -33,13 +33,14 @@ History options:
   --remove=<hash>                       Remove a single show from the history.
 
 Download options:
-  -h, --high                            Download best available version (if available).
-  -l, --low                             Download the smallest available version (if available).
+  -h, --high                            Download best available version.
+  -l, --low                             Download the smallest available version .
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{dir}} (from the option --dir),
                                         {{filename}} (from server filename) and {{ext}} (file
                                         name extension including the dot), and all fields from
-                                        the listing.
+                                        the listing plus {{date}} and {{time}} (the single parts
+                                        of {{start}}).
                                         [default: {{dir}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
   --mark-only                           Do not download any show, but mark it as downloaded
                                         in the history. This is to initialize a new filter
@@ -554,6 +555,8 @@ def move_finished_download(source_path, cwd, target, show, file_name, file_exten
     destination_file_path = target.format(dir=cwd,
                                           filename=file_name,
                                           ext=file_extension,
+                                          date=show['start'].date().isoformat(),
+                                          time=show['start'].strftime('%H:%M'),
                                           **escaped_show_details)
 
     try:
