@@ -130,7 +130,6 @@ from itertools import islice
 from itertools import chain
 from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 from datetime import datetime, timedelta
-from functools import lru_cache
 from functools import partial
 
 import docopt
@@ -172,7 +171,7 @@ FIELDS = {
     'neu': 'new'
 }
 
-DATABASE_FILENAME = '.Filmliste-akt.xz'
+DATABASE_CACHE_FILENAME = '.Filmliste-akt.xz.cache'
 
 DATABASE_URLS = [
     "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
@@ -273,10 +272,9 @@ def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
 
 class Database(object):
 
-    path = None
-
-    def __init__(self, path: str) -> None:
-        self.path = path
+    def __init__(self, cache_file_path: str) -> None:
+        self.cache_file_path = cache_file_path
+        self._db = None
 
     @staticmethod
     def _qualify_url(basis: str, extension: str) -> Union[str, None]:
@@ -310,100 +308,16 @@ class Database(object):
         h.update(str(show.get('start').timestamp()))
         return h.hexdigest()
 
-    @property  # type: ignore
-    @lru_cache(maxsize=None)
-    def _pairs(self) -> List[str]:
-        logging.debug('Opening the database.')
-        reader = codecs.getreader("utf-8")
-        with lzma.open(self.path, 'rb') as fh:
-            with flocked(fh, timeout=3600):
-                return json.load(reader(fh), object_pairs_hook=lambda _pairs: _pairs)  # type: ignore
-
-    @property  # type: ignore
-    @pickle_cache(lambda db: db.path + '.meta.cache')
-    def meta(self) -> Dict[str, Any]:
-        for p in self._pairs:  # type: ignore
-            if p[0] == 'Filmliste':
-                return {
-                    # p[1][0] is local date, p[1][1] is gmt date
-                    'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=pytz.utc),
-                    'crawler_version': p[1][2],
-                    'crawler_agent': p[1][3],
-                    'list_id': p[1][4],
-                }
-        return {}
-
-    @property  # type: ignore
-    @pickle_cache(lambda db: db.path + '.items.cache')
-    def items(self) -> List[Dict[str, Any]]:
-
-        items = []  # type: List
-        header = []  # type: List
-
-        logging.debug('Loading database items.')
-        for p in tqdm(self._pairs[1:],  # type: ignore
-                      unit='shows',
-                      leave=False,
-                      disable=HIDE_PROGRESSBAR,
-                      desc='Reading database items'):
-
-            if p[0] == 'Filmliste':
-                if not header:
-                    header = p[1]
-                    for i, h in enumerate(header):
-                        header[i] = FIELDS.get(h, h)
-
-            elif p[0] == 'X':
-                show = dict(zip(header, p[1]))
-                if show['start'] and show['url'] and show['size']:
-                    item = {
-                        'channel': show['channel'] or items[-1].get('channel'),
-                        'description': show['description'],
-                        'region': show['region'],
-                        'size': int(show['size']) if show['size'] else 0,
-                        'title': show['title'],
-                        'topic': show['topic'] or items[-1].get('topic'),
-                        'website': show['website'],
-                        'new': show['new'] == 'true',
-                        'url_http': show['url'] or None,
-                        'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
-                        'url_http_small': self._qualify_url(show['url'], show['url_small']),
-                        'url_subtitles': show['url_subtitles'],
-                        'start': datetime.fromtimestamp(int(show['start']), tz=pytz.utc).astimezone(local_zone),
-                        'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
-                        'age': now - datetime.fromtimestamp(int(show['start']), tz=pytz.utc)
-                    }
-                    item['hash'] = self._show_hash(item)
-                    items.append(item)
-
-        return items
-
-    def clear_caches(self):
-        """ Drop the pickled cache files for this database. """
-
-        def _delete_cache_file(path: str):
-            # noinspection PyBroadException
+    @property
+    @contextmanager
+    def _filmliste(self, retries: int = 5) -> str:
+        while retries:
+            retries -= 1
             try:
-                os.unlink(path)
-            except:
-                pass
-            else:
-                logging.debug("Dropped results cache %r.", path)
-
-        _delete_cache_file(self.path + '.items.cache')
-        _delete_cache_file(self.path + '.meta.cache')
-
-
-def download_database(destination_path: str, retries: int=5) -> int:
-    while retries:
-        retries -= 1
-        try:
-            os.makedirs(os.path.dirname(destination_path))
-            response = requests.get(random.choice(DATABASE_URLS), stream=True)
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))  # type: ignore
-            with open(destination_path, 'wb') as f:
-                with flocked(f, timeout=3600):
+                response = requests.get(random.choice(DATABASE_URLS), stream=True)
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))  # type: ignore
+                with tempfile.NamedTemporaryFile(mode='wb') as destination_file:
                     with tqdm(total=total_size,
                               unit='B',
                               unit_scale=True,
@@ -412,33 +326,115 @@ def download_database(destination_path: str, retries: int=5) -> int:
                               desc='Downloading database') as progress_bar:
                         for data in response.iter_content(32 * 1024):
                             progress_bar.update(len(data))
-                            f.write(data)
-            return os.stat(destination_path).st_size
-        except requests.exceptions.HTTPError as e:
-            if retries:
-                logging.debug('Database download failed (%d more retries): %s' % (retries, e))
+                            destination_file.write(data)
+                    yield destination_file
+            except requests.exceptions.HTTPError as e:
+                if retries:
+                    logging.debug('Database download failed (%d more retries): %s' % (retries, e))
+                else:
+                    logging.error('Database download failed (no more retries): %s' % e)
+                    raise requests.exceptions.HTTPError('retry limit reached, giving up')
+                time.sleep(5 - retries)
             else:
-                logging.error('Database download failed (no more retries): %s' % e)
-            time.sleep(5-retries)
-    raise requests.exceptions.HTTPError('retry limit reached, giving up')
+                break
 
+    @property  # type: ignore
+    def _script_version(self) -> int:
+        return os.path.getmtime(__file__)
 
-def load_database(cwd: str, refresh_after: int) -> Database:
-    database_path = os.path.join(cwd, DATABASE_FILENAME)
-    try:
-        db = Database(database_path)
-        database_age = now - db.meta['date']
-        logging.debug('Database age is %s.', database_age)
-        if database_age < timedelta(hours=refresh_after):
-            return db
+    @pickle_cache(lambda db: db.cache_file_path)
+    def _load(self) -> Dict[str, Union[int, List, Dict[str, Any]]]:
+
+        meta = {}  # type: Dict
+        items = []  # type: List
+        header = []  # type: List
+
+        logging.debug('Opening the database.')
+        with self._filmliste as filmliste:
+            with lzma.open(filmliste.name) as fh:
+
+                logging.debug('Loading database items.')
+                reader = codecs.getreader("utf-8")
+                for p in tqdm(json.load(reader(fh), object_pairs_hook=lambda _pairs: _pairs),
+                              unit='shows',
+                              leave=False,
+                              disable=HIDE_PROGRESSBAR,
+                              desc='Reading database items'):
+
+                    if not meta and p[0] == 'Filmliste':
+                        meta = {
+                            # p[1][0] is local date, p[1][1] is gmt date
+                            'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=pytz.utc),
+                            'crawler_version': p[1][2],
+                            'crawler_agent': p[1][3],
+                            'list_id': p[1][4],
+                        }
+
+                    elif p[0] == 'Filmliste':
+                        if not header:
+                            header = p[1]
+                            for i, h in enumerate(header):
+                                header[i] = FIELDS.get(h, h)
+
+                    elif p[0] == 'X':
+                        show = dict(zip(header, p[1]))
+                        if show['start'] and show['url'] and show['size']:
+                            item = {
+                                'channel': show['channel'] or items[-1].get('channel'),
+                                'description': show['description'],
+                                'region': show['region'],
+                                'size': int(show['size']) if show['size'] else 0,
+                                'title': show['title'],
+                                'topic': show['topic'] or items[-1].get('topic'),
+                                'website': show['website'],
+                                'new': show['new'] == 'true',
+                                'url_http': show['url'] or None,
+                                'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
+                                'url_http_small': self._qualify_url(show['url'], show['url_small']),
+                                'url_subtitles': show['url_subtitles'],
+                                'start': datetime.fromtimestamp(int(show['start']), tz=pytz.utc).astimezone(local_zone),
+                                'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
+                                'age': now - datetime.fromtimestamp(int(show['start']), tz=pytz.utc)
+                            }
+                            item['hash'] = self._show_hash(item)
+                            items.append(item)
+
+        return {
+            'version': self._script_version,
+            'meta': meta,
+            'items': items
+        }
+
+    @property
+    def db(self):
+        if not self._db:
+            self._db = self._load()
+        return self._db
+
+    def clear(self):
+        """ Drop the pickled cache file for this database. """
+
+        self._db = None
+        # noinspection PyBroadException
+        try:
+            os.unlink(self.cache_file_path)
+        except:
+            pass
         else:
-            db.clear_caches()
+            logging.debug("Dropped cache %r.", self.cache_file_path)
 
-    except OSError as e:
-        logging.debug('Failed to open database: %s', e)
+    def clear_if_foreign(self):
+        if self.db['version'] != self._script_version:
+            logging.debug('Database is for a different script version.')
+            self.clear()
 
-    download_database(database_path)
-    return Database(database_path)
+    def clear_if_old(self, refresh_after):
+        database_age = now - self.db['meta']['date']
+        if database_age > timedelta(hours=refresh_after):
+            logging.debug('Database age is %s (too old).', database_age)
+            self.clear()
+        else:
+            logging.debug('Database age is %s.', database_age)
 
 
 def escape_item(obj: Any) -> str:
@@ -535,7 +531,7 @@ class History(object):
         history_storage = TinySerializationMiddleware()
         history_storage.register_serializer(DateTimeSerializer(), 'Datetime')
         history_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
-        history_file_path = os.path.join(self._cwd, '.history.db')
+        history_file_path = os.path.join(self._cwd, '.history._db')
         try:
             os.makedirs(os.path.dirname(history_file_path))
         except FileExistsError:
@@ -800,7 +796,12 @@ def main():
     # temp file and download config
     cw_dir = os.path.abspath(os.path.expanduser(arguments['--dir']) if arguments['--dir'] else os.getcwd())
     target_dir = os.path.expanduser(arguments['--target'])
-    tempfile.tempdir = cw_dir
+    try:
+        os.makedirs(cw_dir)
+    except FileExistsError:
+        pass
+    finally:
+        tempfile.tempdir = cw_dir
 
     #  tracking
     history = History(cwd=cw_dir)
@@ -815,12 +816,14 @@ def main():
                 print(item_table(sorted(history.all, key=lambda s: s.get('downloaded'))))
 
         else:
-            db = load_database(cw_dir, refresh_after=int(arguments['--refresh-after']))
+            filmliste = Database(cache_file_path=os.path.join(cw_dir, DATABASE_CACHE_FILENAME))
+            filmliste.clear_if_foreign()
+            filmliste.clear_if_old(refresh_after=int(arguments['--refresh-after']))
+
             limit = int(arguments['--count']) if arguments['list'] else None
-            db_items = db.items
             shows = history.check(
                 islice(
-                    chain(*(filter_items(items=db_items,
+                    chain(*(filter_items(items=filmliste.db['items'],
                                          rules=filter_set,
                                          include_future=arguments['--include-future'])
                             for filter_set

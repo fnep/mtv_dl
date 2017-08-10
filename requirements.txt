@@ -9,5 +9,5 @@ tinydb
 tinydb-serialization
 pydash
 tqdm
-durationpy>0.5
+durationpy>=0.5
 xxhash

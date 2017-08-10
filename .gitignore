@@ -1,9 +1,7 @@
 *.py[cod]
 .idea
 /.history.db
-/.Filmliste-akt.xz
-/.Filmliste-akt.xz.meta.cache
-/.Filmliste-akt.xz.items.cache
+/.Filmliste-akt.xz.cache
 /.mypy_cache
 /dist
 /MANIFEST
