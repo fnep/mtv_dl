@@ -59,7 +59,7 @@ Get show details in JSON format
 
 .. code::
 
-  ~/dev/mtv_dl/mtv_dl.py dump hash=49ea2aa7
+  $ mtv_dl dump hash=49ea2aa7
   [
       {
           "age": "17:15:00",
