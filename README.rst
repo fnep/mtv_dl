@@ -7,7 +7,7 @@ A command line tool to download videos from public broadcasting services in Germ
 Features
 --------
 
-- No GUI or web interface. Less then 100 lines of code. Only python dependencies.
+- No GUI or web interface. Less then 1000 lines of code. Only python dependencies.
 - Powerful filter system for lists and download selection.
 - Download .mp4, .flv and .m3u8 (HLS) media.
 - Keep track of downloaded files and don't download them again.
@@ -53,6 +53,33 @@ Download all shows matching any filter in `sets.txt`
 
   $ mtv_dl download --dir=/media --high --target='{dir}/{channel}/[{topic} {date}] {title}{ext}' --sets=sets.txt
 
+
+Get show details in JSON format
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code::
+
+  ~/dev/mtv_dl/mtv_dl.py dump hash=49ea2aa7
+  [
+      {
+          "age": "17:15:00",
+          "channel": "ARD",
+          "description": "Mobbingopfer Dieselfahrer; Fahr die Autoindustrie gegen die Wand!; Song: Merkel ist weg; Lebensmittelexperte Heinz Strunk; Werde Hooligan! - Christian Ehring zeigt den Irrsinn der Woche",
+          "duration": "0:43:00",
+          "hash": "49ea2aa7",
+          "new": false,
+          "region": "",
+          "size": 646,
+          "start": "2017-08-10T22:45:00+02:00",
+          "title": "Extra 3 vom 10.08.2017",
+          "topic": "extra 3",
+          "url_http": "http://media.ndr.de/progressive/2017/0810/TV-20170810-2232-3000.hq.mp4",
+          "url_http_hd": "http://media.ndr.de/progressive/2017/0810/TV-20170810-2232-3000.hd.mp4",
+          "url_http_small": "http://media.ndr.de/progressive/2017/0810/TV-20170810-2232-3000.hi.mp4",
+          "url_subtitles": "",
+          "website": "http://www.ardmediathek.de/tv/extra-3/Extra-3-vom-10-08-2017/Das-Erste/Video?bcastId=23817212&documentId=45120180"
+      }
+  ]
 
 Installation
 ------------
