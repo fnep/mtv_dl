@@ -9,7 +9,7 @@ requirements = parse_requirements(os.path.join(os.path.dirname(__file__), 'requi
 setup(name='mtv_dl',
       version='0.1',
       description='MediathekView Downloader',
-      long_description='Commandline tool to download videos from MediathekView.',
+      long_description='Command line tool to download videos from MediathekView.',
       author='Frank Epperlein',
       author_email='frank+mtv_dl@epperle.in',
       url='https://github.com/efenka/mtv_dl',
@@ -29,4 +29,3 @@ setup(name='mtv_dl',
       ],
       python_requires='>=3.5',
       install_requires=[str(ir.req) for ir in requirements])
-
