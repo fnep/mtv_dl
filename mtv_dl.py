@@ -109,42 +109,42 @@ Filter sets:
 
  """
 
+import codecs
+import fcntl
 import json
 import logging
 import lzma
 import os
+import pickle
 import random
 import re
-import sys
-import time
-import shutil
-import traceback
-import tempfile
-import codecs
-import xxhash
-import urllib.parse
-import pickle
 import shlex
-import fcntl
+import shutil
+import sys
+import tempfile
+import time
+import traceback
+import urllib.parse
 from contextlib import contextmanager
-from itertools import islice
-from itertools import chain
-from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 from datetime import datetime, timedelta
 from functools import partial
+from itertools import chain
+from itertools import islice
+from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 
 import docopt
+import durationpy
 import iso8601
-import rfc6266
 import pytz
 import requests
+import rfc6266
 import tzlocal
-import durationpy
+import xxhash
 from pydash import py_
 from terminaltables import AsciiTable
 from tinydb import TinyDB, Query as TinyQuery
-from tinydb_serialization import Serializer as TinySerializer
 from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
+from tinydb_serialization import Serializer as TinySerializer
 from tqdm import tqdm
 
 CHUNK_SIZE = 128 * 1024
