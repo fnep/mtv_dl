@@ -18,6 +18,7 @@ Commands:
 Options:
   -v, --verbose                         Show more details.
   -q, --quiet                           Hide everything not really needed.
+  -b, --no-bar                          Hide the progressbar.
   -l <path>, --logfile=<path>           Log messages to a file instead of stdout.
   -r <hours>, --refresh-after=<hours>   Update database if it is older then the given
                                         number of hours. [default: 3]
@@ -173,6 +174,7 @@ FIELDS = {
 
 DATABASE_CACHE_FILENAME = '.Filmliste-akt.xz.cache'
 
+# see https://res.mediathekview.de/akt.xml
 DATABASE_URLS = [
     "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler2.mediathekview.de/Filmliste-akt.xz",
@@ -685,7 +687,7 @@ class Show(dict):
                 if not line:
                     continue
                 elif line.startswith("#EXT-X-STREAM-INF:"):
-                    # see https://tools.ietf.org/html/draft-pantos-http-live-streaming-16#section-4.3.4.2
+                    # see http://archive.is/Pe9Pt#section-4.3.4.2
                     segment = {m.group(1).lower(): m.group(2).strip() for m in re.finditer(r'([A-Z-]+)=([^,]+)', line)}
                     for key, value in segment.items():
                         if value[0] in ('"', "'") and value[0] == value[-1]:
@@ -790,9 +792,9 @@ def main():
 
     # progressbar handling
     global HIDE_PROGRESSBAR
-    HIDE_PROGRESSBAR = bool(arguments['--logfile']) or arguments['--quiet']
+    HIDE_PROGRESSBAR = bool(arguments['--logfile']) or bool(arguments['--no-bar']) or arguments['--quiet']
 
-    # broken console encoding handling
+    # broken console encoding handling  (http://archive.is/FRcJe#60%)
     if sys.stdout.encoding != 'UTF-8':
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
     if sys.stderr.encoding != 'UTF-8':
