@@ -477,46 +477,49 @@ class Database(object):
                                            match.group('operator'), \
                                            match.group('pattern')  # type: str, str, Any
 
+                if field in ('duration', 'age'):
+                    pattern = durationpy.from_str(pattern)
+                elif field in ('start', ) and operator in ('+', '-'):
+                    pattern = iso8601.parse_date(pattern)
+                elif field in ('size', ):
+                    pattern = int(pattern)
+                elif field in ('description', 'region', 'size', 'channel', 'topic', 'title', 'hash', 'url', 'start'):
+                    pattern = str(pattern)
+                else:
+                    raise ConfigurationError('Invalid filter field: %r' % field)
+
                 # replace odd names
                 field = {
                     'url': 'url_http'
                 }.get(field, field)
 
-                if field in ('description', 'region', 'size', 'channel', 'topic', 'title', 'hash', 'url_http'):
-                    pattern = str(pattern)
-                elif field in ('duration', 'age'):
-                    pattern = durationpy.from_str(pattern)
-                elif field in ('start', ):
-                    pattern = iso8601.parse_date(pattern)
-                elif field in ('size', ):
-                    pattern = int(pattern)
-                else:
-                    raise ConfigurationError('Invalid filter field: %r' % field)
+                def require(fn):
+                    checks.append((field, partial(fn, pattern)))
 
                 if operator == '=':
                     if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
                                  'topic', 'title', 'hash', 'url_http'):
-                        checks.append((field, partial(lambda p, v: bool(re.search(p, v, re.IGNORECASE)), pattern)))
+                        require(lambda p, v: bool(re.search(p, v, re.IGNORECASE)))
                     elif field in ('start', ):
-                        checks.append((field, partial(lambda p, v: v == p, pattern)))
+                        require(lambda p, v: bool(re.search(p, v.isoformat(), re.IGNORECASE)))
                     else:
                         raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
                 elif operator == '!=':
                     if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
                                  'topic', 'title', 'hash', 'url_http'):
-                        checks.append((field, partial(lambda p, v: not bool(re.search(p, v, re.IGNORECASE)), pattern)))
+                        require(lambda p, v: not bool(re.search(p, v, re.IGNORECASE)))
                     elif field in ('start', ):
-                        checks.append((field, partial(lambda p, v: v != p, pattern)))
+                        require(lambda p, v: not bool(re.search(p, v.isoformat(), re.IGNORECASE)))
                     else:
                         raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
                 elif operator == '-':
                     if field not in ('duration', 'age', 'size', 'start'):
                         raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
-                    checks.append((field, partial(lambda p, v: v <= p, pattern)))
+                    require(lambda p, v: v <= p)
                 elif operator == '+':
                     if field not in ('duration', 'age', 'size', 'start'):
                         raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
-                    checks.append((field, partial(lambda p, v: v >= p, pattern)))
+                    require(lambda p, v: v >= p)
                 else:
                     raise ConfigurationError('Invalid operator: %r' % operator)
 
@@ -532,7 +535,7 @@ class Database(object):
                 if not checks:
                     yield row
                 else:
-                    if all(check(row.get(field)) for field, check in checks):
+                    if all(fn(row.get(field)) for field, fn in checks):
                         yield row
             except (ValueError, TypeError):
                 pass
