@@ -139,6 +139,7 @@ import rfc6266
 import pytz
 import requests
 import tzlocal
+import durationpy
 from pydash import py_
 from terminaltables import AsciiTable
 from tinydb import TinyDB, Query as TinyQuery
@@ -146,7 +147,7 @@ from tinydb_serialization import Serializer as TinySerializer
 from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
 from tqdm import tqdm
 
-import durationpy
+CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
 
@@ -338,7 +339,7 @@ class Database(object):
                                   leave=False,
                                   disable=HIDE_PROGRESSBAR,
                                   desc='Downloading database') as progress_bar:
-                            for data in response.iter_content(32 * 1024):
+                            for data in response.iter_content(CHUNK_SIZE):
                                 progress_bar.update(len(data))
                                 fh.write(data)
                     yield temp_file_path
@@ -651,7 +652,7 @@ class Show(dict):
 
                 # actual download
                 with open(destination_file_path, 'wb') as fh:
-                    for data in response.iter_content(32 * 1024):
+                    for data in response.iter_content(CHUNK_SIZE):
                         progress_bar.update(len(data))
                         fh.write(data)
 
