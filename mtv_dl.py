@@ -25,6 +25,7 @@ Options:
   -d <path>, --dir=<path>               Directory to put the databases in (default is
                                         the current working directory).
   --include-future                      Include shows that have not yet started.
+  -c <path>, --config=<path>            Path to the config file.
 
 List options:
   -c <results>, --count=<results>       Limit the number of results. [default: 50]
@@ -107,6 +108,20 @@ Filter sets:
   by these filters. Be aware that this is not faster then running all queries separately
   but just more comfortable.
 
+Config file:
+
+  The config file is an optional, yaml formatted text file, that allows to overwrite the most
+  arguments by their name. If not defined differently, it is expected to be in the root of
+  the home dir ({config_file}). Valid config keys are:
+
+    {config_options}
+
+  Example config:
+
+    verbose: true
+    high: true
+    dir: ~/download
+
  """
 
 import codecs
@@ -130,6 +145,7 @@ from datetime import datetime, timedelta
 from functools import partial
 from itertools import chain
 from itertools import islice
+from textwrap import fill as wrap
 from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 
 import docopt
@@ -140,12 +156,14 @@ import requests
 import rfc6266
 import tzlocal
 import xxhash
+import yaml
 from pydash import py_
 from terminaltables import AsciiTable
 from tinydb import TinyDB, Query as TinyQuery
 from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
 from tinydb_serialization import Serializer as TinySerializer
 from tqdm import tqdm
+from yaml.error import YAMLError
 
 CHUNK_SIZE = 128 * 1024
 
@@ -174,6 +192,21 @@ FIELDS = {
 }
 
 DATABASE_CACHE_FILENAME = '.Filmliste-akt.xz.cache'
+
+DEFAULT_CONFIG_FILE = '~/.mtv_dl.yml'
+CONFIG_OPTIONS = [
+    'count',
+    'dir',
+    'high',
+    'include-future',
+    'logfile',
+    'low',
+    'no-bar',
+    'quiet',
+    'refresh-after',
+    'target',
+    'verbose']
+
 
 # see https://res.mediathekview.de/akt.xml
 DATABASE_URLS = [
@@ -790,9 +823,31 @@ class Show(dict):
             shutil.rmtree(temp_path)
 
 
+def load_config(arguments: Dict) -> Dict:
+    config_file_path = os.path.expanduser(arguments['--config'] or DEFAULT_CONFIG_FILE)
+    try:
+        config = yaml.safe_load(open(config_file_path))
+    except OSError as e:
+        if arguments['--config']:
+            logging.warning('Config file file defined but not loaded: %s', e)
+    except YAMLError as e:
+        logging.warning('Unable to read config file (config file ignored): %s', e)
+    else:
+        invalid_config_options = set(config.keys()).difference(CONFIG_OPTIONS)
+        if invalid_config_options:
+            logging.warning('Invalid config options (config file ignored): %s', ', '.join(invalid_config_options))
+        else:
+            arguments.update({'--%s' % o: config[o] for o in config})
+    return arguments
+
+
 def main():
 
-    arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__)))
+    # argument handling
+    arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__),
+                                             config_file=DEFAULT_CONFIG_FILE,
+                                             config_options=wrap(', '.join(CONFIG_OPTIONS),
+                                                                 subsequent_indent=' ' * 4)))
 
     # progressbar handling
     global HIDE_PROGRESSBAR
@@ -813,19 +868,21 @@ def main():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("rfc6266").setLevel(logging.WARNING)
 
-    # ISO8601 logging
-    if arguments['--verbose']:
-        log_level = logging.DEBUG
-    elif arguments['--quiet']:
-        log_level = logging.ERROR
-    else:
-        log_level = logging.INFO
-
     logging.basicConfig(
         filename=os.path.expanduser(arguments['--logfile']) if arguments['--logfile'] else None,
         format="%(asctime)s %(levelname)-8s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S%z",
-        level=log_level)
+        datefmt="%Y-%m-%dT%H:%M:%S%z")
+
+    # config handling
+    arguments = load_config(arguments)
+
+    # ISO8601 logging
+    if arguments['--verbose']:
+        logging.root.setLevel(logging.DEBUG)
+    elif arguments['--quiet']:
+        logging.root.setLevel(logging.ERROR)
+    else:
+        logging.root.setLevel(logging.INFO)
 
     sys.excepthook = lambda _c, _e, _t: logging.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
 
