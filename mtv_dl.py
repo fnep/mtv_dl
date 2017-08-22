@@ -355,7 +355,7 @@ class Database(object):
         return h.hexdigest()
 
     @contextmanager
-    def _filmliste(self, retries: int = len(DATABASE_URLS)) -> Generator[str, None, None]:
+    def _showlist(self, retries: int = len(DATABASE_URLS)) -> Generator[str, None, None]:
         while retries:
             retries -= 1
             try:
@@ -400,8 +400,8 @@ class Database(object):
         items = []  # type: List
         header = []  # type: List
 
-        with self._filmliste() as filmliste_path:
-            with lzma.open(filmliste_path) as fh:
+        with self._showlist() as showlist_path:
+            with lzma.open(showlist_path) as fh:
 
                 logger.debug('Loading database items.')
                 reader = codecs.getreader("utf-8")
@@ -788,7 +788,7 @@ class Show(dict):
     def __init__(self, show: Dict[str, Any], **kwargs: Dict) -> None:
         super().__init__(show, **kwargs)
 
-    def download(self, quality: Tuple[str, str, str], cwd: str, target: str) -> str:
+    def download(self, quality: Tuple[str, str, str], cwd: str, target: str) -> Union[str, None]:
         temp_path = tempfile.mkdtemp(prefix='.tmp')
         try:
 
@@ -822,6 +822,8 @@ class Show(dict):
             logger.error('Download of %s failed: %s', self.label, str(e))
         finally:
             shutil.rmtree(temp_path)
+
+        return None
 
 
 def load_config(arguments: Dict) -> Dict:
@@ -912,18 +914,18 @@ def main():
                 print(Table(sorted(history.all, key=lambda s: s.get('downloaded'))).as_ascii_table())
 
         else:
-            filmliste = Database(cache_file_path=os.path.join(cw_dir, DATABASE_CACHE_FILENAME))
-            filmliste.clear_if_foreign()
-            filmliste.clear_if_old(refresh_after=int(arguments['--refresh-after']))
+            showlist = Database(cache_file_path=os.path.join(cw_dir, DATABASE_CACHE_FILENAME))
+            showlist.clear_if_foreign()
+            showlist.clear_if_old(refresh_after=int(arguments['--refresh-after']))
 
             limit = int(arguments['--count']) if arguments['list'] else None
             shows = history.check(
                 islice(
-                    chain(*(filmliste.filtered(rules=filter_set,
-                                               include_future=arguments['--include-future'])
+                    chain(*(showlist.filtered(rules=filter_set,
+                                              include_future=arguments['--include-future'])
                             for filter_set
-                            in filmliste.read_filter_sets(sets_file_path=arguments['--sets'],
-                                                          default_filter=arguments['<filter>']))),
+                            in showlist.read_filter_sets(sets_file_path=arguments['--sets'],
+                                                         default_filter=arguments['<filter>']))),
                     limit or None))
 
             if arguments['list']:

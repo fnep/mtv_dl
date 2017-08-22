@@ -39,19 +39,35 @@ Download all shows matching the filter
   $ mtv_dl download topic='extra 3' duration+20m age-1w
 
 
-Download all shows matching any filter in `sets.txt`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Download all shows matching any filter a text file
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code::
 
-  $ cat sets.txt
+  $ cat shows.txt
   channel=ARD topic='extra 3' title!=spezial duration+20m
   channel=ZDF topic='Die Anstalt' duration+45m
   channel=ZDF topic=heute-show duration+20m
 
 .. code::
 
-  $ mtv_dl download --dir=/media --high --target='{dir}/{channel}/[{topic} {date}] {title}{ext}' --sets=sets.txt
+  $ mtv_dl download --dir=/media --high --target='{dir}/{channel}/[{topic} {date}] {title}{ext}' --sets=shows.txt
+
+
+Use a config file to apply useful defaults for all commands
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code::
+
+  $ cat  ~/.mtv_dl.yml
+  verbose: true
+  high: true
+  dir: /media
+  target: '{dir}/{channel}/[{topic} {date}] {title}{ext}'
+
+.. code::
+
+  $ mtv_dl download hash=49ea2aa7
 
 
 Get show details in JSON format
@@ -64,7 +80,7 @@ Get show details in JSON format
       {
           "age": "17:15:00",
           "channel": "ARD",
-          "description": "Mobbingopfer Dieselfahrer; Fahr die Autoindustrie gegen die Wand!; Song: Merkel ist weg; Lebensmittelexperte Heinz Strunk; Werde Hooligan! - Christian Ehring zeigt den Irrsinn der Woche",
+          "description": "[...]",
           "duration": "0:43:00",
           "hash": "49ea2aa7",
           "new": false,
@@ -73,11 +89,11 @@ Get show details in JSON format
           "start": "2017-08-10T22:45:00+02:00",
           "title": "Extra 3 vom 10.08.2017",
           "topic": "extra 3",
-          "url_http": "http://media.ndr.de/progressive/2017/0810/TV-20170810-2232-3000.hq.mp4",
-          "url_http_hd": "http://media.ndr.de/progressive/2017/0810/TV-20170810-2232-3000.hd.mp4",
-          "url_http_small": "http://media.ndr.de/progressive/2017/0810/TV-20170810-2232-3000.hi.mp4",
+          "url_http": "[...]",
+          "url_http_hd": "[...]",
+          "url_http_small": "[...]",
           "url_subtitles": "",
-          "website": "http://www.ardmediathek.de/tv/extra-3/Extra-3-vom-10-08-2017/Das-Erste/Video?bcastId=23817212&documentId=45120180"
+          "website": "[...]"
       }
   ]
 
