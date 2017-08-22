@@ -219,6 +219,7 @@ DATABASE_URLS = [
     "http://download10.onlinetvrecorder.com/mediathekview/Filmliste-akt.xz",
 ]
 
+logger = logging.getLogger('mtv_dl')
 local_zone = tzlocal.get_localzone()
 now = datetime.now(tz=pytz.utc).replace(second=0, microsecond=0)
 
@@ -297,13 +298,13 @@ def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
             try:
                 with open(_cache_file, 'rb') as cache_handle:
                     with flocked(cache_handle, timeout=60):
-                        logging.debug("Using cache from %r.", _cache_file)
+                        logger.debug("Using cache from %r.", _cache_file)
                         return pickle.load(cache_handle)
             except:
                 res = fn(*args, **kwargs)
                 with open(_cache_file, 'wb') as cache_handle:
                     with flocked(cache_handle, timeout=60):
-                        logging.debug("Saving cache to %r.", _cache_file)
+                        logger.debug("Saving cache to %r.", _cache_file)
                         try:
                             pickle.dump(res, cache_handle)
                         except:
@@ -359,7 +360,7 @@ class Database(object):
             retries -= 1
             try:
                 url = random.choice(DATABASE_URLS)
-                logging.debug('Opening database from %r.', url)
+                logger.debug('Opening database from %r.', url)
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
                 total_size = int(response.headers.get('content-length', 0))  # type: ignore
@@ -380,9 +381,9 @@ class Database(object):
                     os.unlink(temp_file_path)
             except requests.exceptions.HTTPError as e:
                 if retries:
-                    logging.debug('Database download failed (%d more retries): %s' % (retries, e))
+                    logger.debug('Database download failed (%d more retries): %s' % (retries, e))
                 else:
-                    logging.error('Database download failed (no more retries): %s' % e)
+                    logger.error('Database download failed (no more retries): %s' % e)
                     raise requests.exceptions.HTTPError('retry limit reached, giving up')
                 time.sleep(5 - retries)
             else:
@@ -402,7 +403,7 @@ class Database(object):
         with self._filmliste() as filmliste_path:
             with lzma.open(filmliste_path) as fh:
 
-                logging.debug('Loading database items.')
+                logger.debug('Loading database items.')
                 reader = codecs.getreader("utf-8")
                 for p in tqdm(json.load(reader(fh), object_pairs_hook=lambda _pairs: _pairs),  # type: ignore
                               unit='shows',
@@ -474,20 +475,20 @@ class Database(object):
         except:
             pass
         else:
-            logging.debug("Dropped cache %r.", self.cache_file_path)
+            logger.debug("Dropped cache %r.", self.cache_file_path)
 
     def clear_if_foreign(self):
         if self.db['version'] != self._script_version:
-            logging.debug('Database is for a different script version.')
+            logger.debug('Database is for a different script version.')
             self.clear()
 
     def clear_if_old(self, refresh_after):
         database_age = now - self.db['meta']['date']
         if database_age > timedelta(hours=refresh_after):
-            logging.debug('Database age is %s (too old).', database_age)
+            logger.debug('Database age is %s (too old).', database_age)
             self.clear()
         else:
-            logging.debug('Database age is %s.', database_age)
+            logger.debug('Database age is %s.', database_age)
 
     @staticmethod
     def read_filter_sets(sets_file_path, default_filter):
@@ -560,7 +561,7 @@ class Database(object):
                 raise ConfigurationError('Invalid filter definition. '
                                          'Property and filter rule expected separated by an operator.')
 
-        logging.debug('Applying filter: %s', ', '.join(rules))
+        logger.debug('Applying filter: %s', ', '.join(rules))
         for row in self.shows:
             if not include_future and row['start'] > now:
                 continue
@@ -617,10 +618,10 @@ class History(object):
         row = TinyQuery()
         with self.db as db:
             if db.remove(row.hash == show_hash):
-                logging.info('Removed %s from history.', show_hash)
+                logger.info('Removed %s from history.', show_hash)
                 return True
             else:
-                logging.warning('Could not remove %s (not found).', show_hash)
+                logger.warning('Could not remove %s (not found).', show_hash)
                 return False
 
     def insert(self, show):
@@ -711,9 +712,9 @@ class Show(dict):
                 pass
             os.rename(source_path, destination_file_path)
         except OSError as e:
-            logging.warning('Skipped %s: %s', self.label, str(e))
+            logger.warning('Skipped %s: %s', self.label, str(e))
         else:
-            logging.info('Saved %s to %r.', self.label, destination_file_path)
+            logger.info('Saved %s to %r.', self.label, destination_file_path)
 
     @staticmethod
     def _get_m3u8_segments(base_url: str, hls_file_path: str) -> Generator[Dict[str, Any], None, None]:
@@ -762,14 +763,14 @@ class Show(dict):
             designated_index_segment = hls_index_segments[len(hls_index_segments) // 2]
 
         designated_index_file = list(self._download_files(temp_dir_path, [designated_index_segment['url']]))[0]
-        logging.debug('Selected HLS bandwidth is %d (available: %s).',
-                      designated_index_segment['bandwidth'],
-                      ', '.join(str(s['bandwidth']) for s in hls_index_segments))
+        logger.debug('Selected HLS bandwidth is %d (available: %s).',
+                     designated_index_segment['bandwidth'],
+                     ', '.join(str(s['bandwidth']) for s in hls_index_segments))
 
         # get stream segments
         hls_target_segments = list(self._get_m3u8_segments(base_url, designated_index_file))
         hls_target_files = self._download_files(temp_dir_path, list(s['url'] for s in hls_target_segments))
-        logging.debug('%d HLS segments to download.', len(hls_target_segments))
+        logger.debug('%d HLS segments to download.', len(hls_target_segments))
 
         # download and join the segment files
         fd, temp_file_path = tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')
@@ -796,7 +797,7 @@ class Show(dict):
                        or self["url_http%s" % quality[1]] \
                        or self["url_http%s" % quality[2]]
 
-            logging.debug('Downloading %s from %r.', self.label, show_url)
+            logger.debug('Downloading %s from %r.', self.label, show_url)
             show_file_path = list(self._download_files(temp_path, [show_url]))[0]
             show_file_name = os.path.basename(show_file_path)
             if '.' in show_file_name:
@@ -815,10 +816,10 @@ class Show(dict):
                 return show_file_path
 
             else:
-                logging.error('File extension %s of %s not supported.', show_file_extension, self.label)
+                logger.error('File extension %s of %s not supported.', show_file_extension, self.label)
 
         except (requests.exceptions.RequestException, OSError) as e:
-            logging.error('Download of %s failed: %s', self.label, str(e))
+            logger.error('Download of %s failed: %s', self.label, str(e))
         finally:
             shutil.rmtree(temp_path)
 
@@ -829,13 +830,13 @@ def load_config(arguments: Dict) -> Dict:
         config = yaml.safe_load(open(config_file_path))
     except OSError as e:
         if arguments['--config']:
-            logging.warning('Config file file defined but not loaded: %s', e)
+            logger.warning('Config file file defined but not loaded: %s', e)
     except YAMLError as e:
-        logging.warning('Unable to read config file (config file ignored): %s', e)
+        logger.warning('Unable to read config file (config file ignored): %s', e)
     else:
         invalid_config_options = set(config.keys()).difference(CONFIG_OPTIONS)
         if invalid_config_options:
-            logging.warning('Invalid config options (config file ignored): %s', ', '.join(invalid_config_options))
+            logger.warning('Invalid config options (config file ignored): %s', ', '.join(invalid_config_options))
         else:
             arguments.update({'--%s' % o: config[o] for o in config})
     return arguments
@@ -859,7 +860,7 @@ def main():
     if sys.stderr.encoding != 'UTF-8':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
-    # rfc6266 logging fix (don't expect an upstream fix for that)
+    # rfc6266 logger fix (don't expect an upstream fix for that)
     for logging_handler in rfc6266.LOGGER.handlers:
         rfc6266.LOGGER.removeHandler(logging_handler)
 
@@ -868,23 +869,25 @@ def main():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("rfc6266").setLevel(logging.WARNING)
 
-    logging.basicConfig(
-        filename=os.path.expanduser(arguments['--logfile']) if arguments['--logfile'] else None,
-        format="%(asctime)s %(levelname)-8s %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S%z")
+    # ISO8601 logger
+    if arguments['--logfile']:
+        logging_handler = logging.FileHandler(arguments['--logfile'])
+    else:
+        logging_handler = logging.StreamHandler()
+
+    logging_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", "%Y-%m-%dT%H:%M:%S%z"))
+    logger.addHandler(logging_handler)
+    sys.excepthook = lambda _c, _e, _t: logger.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
 
     # config handling
     arguments = load_config(arguments)
 
-    # ISO8601 logging
     if arguments['--verbose']:
-        logging.root.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     elif arguments['--quiet']:
-        logging.root.setLevel(logging.ERROR)
+        logger.setLevel(logging.ERROR)
     else:
-        logging.root.setLevel(logging.INFO)
-
-    sys.excepthook = lambda _c, _e, _t: logging.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
+        logger.setLevel(logging.INFO)
 
     # temp file and download config
     cw_dir = os.path.abspath(os.path.expanduser(arguments['--dir']) if arguments['--dir'] else os.getcwd())
@@ -946,12 +949,12 @@ def main():
                         else:
                             show['downloaded'] = now
                             history.insert(show)
-                            logging.info('Marked %s from %s as downloaded.', show.label)
+                            logger.info('Marked %s from %s as downloaded.', show.label)
                     else:
-                        logging.debug('Skipping %s (already loaded on %s)', show.label, item['downloaded'])
+                        logger.debug('Skipping %s (already loaded on %s)', show.label, item['downloaded'])
 
     except ConfigurationError as e:
-        logging.error(str(e))
+        logger.error(str(e))
     except KeyboardInterrupt:
         pass
 
