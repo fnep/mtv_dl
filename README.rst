@@ -57,17 +57,19 @@ Download all shows matching any filter a text file
 Use a config file to apply useful defaults for all commands
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+This is my cronjob default.
+
 .. code::
 
   $ cat  ~/.mtv_dl.yml
-  verbose: true
   high: true
   dir: /media
   target: '{dir}/{channel}/[{topic} {date}] {title}{ext}'
 
 .. code::
 
-  $ mtv_dl download hash=49ea2aa7
+  $ crontab -l
+  0 *	* * * mtv_dl download --logfile=~/download.log --sets=~/shows.txt
 
 
 Get show details in JSON format
