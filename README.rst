@@ -111,4 +111,4 @@ The easiest way is to install using pip:
 
 .. code:: shell
 
-  $ pip3 install mtv_dl
+  $ pip3 install mtv-dl

@@ -3,6 +3,7 @@
 set -o errexit
 cd "${0%/*}"
 
+rm -rf dist/
 virtualenv env
 source ./env/bin/activate
 pip3 install wheel --upgrade
