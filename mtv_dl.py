@@ -194,18 +194,19 @@ FIELDS = {
 DATABASE_CACHE_FILENAME = '.Filmliste-akt.xz.cache'
 
 DEFAULT_CONFIG_FILE = '~/.mtv_dl.yml'
-CONFIG_OPTIONS = [
-    'count',
-    'dir',
-    'high',
-    'include-future',
-    'logfile',
-    'low',
-    'no-bar',
-    'quiet',
-    'refresh-after',
-    'target',
-    'verbose']
+CONFIG_OPTIONS = {
+    'count': int,
+    'dir': str,
+    'high': bool,
+    'include-future': bool,
+    'logfile': str,
+    'low': bool,
+    'no-bar': bool,
+    'quiet': bool,
+    'refresh-after': int,
+    'target': str,
+    'verbose': bool
+}
 
 
 # see https://res.mediathekview.de/akt.xml
@@ -827,20 +828,36 @@ class Show(dict):
 
 
 def load_config(arguments: Dict) -> Dict:
+
     config_file_path = os.path.expanduser(arguments['--config'] or DEFAULT_CONFIG_FILE)
+
     try:
         config = yaml.safe_load(open(config_file_path))
+
     except OSError as e:
         if arguments['--config']:
-            logger.warning('Config file file defined but not loaded: %s', e)
+            logger.error('Config file file defined but not loaded: %s', e)
+            sys.exit(1)
+
     except YAMLError as e:
-        logger.warning('Unable to read config file (config file ignored): %s', e)
+        logger.error('Unable to read config file: %s', e)
+        sys.exit(1)
+
     else:
-        invalid_config_options = set(config.keys()).difference(CONFIG_OPTIONS)
+        invalid_config_options = set(config.keys()).difference(CONFIG_OPTIONS.keys())
         if invalid_config_options:
-            logger.warning('Invalid config options (config file ignored): %s', ', '.join(invalid_config_options))
+            logger.error('Invalid config options: %s', ', '.join(invalid_config_options))
+            sys.exit(1)
+
         else:
-            arguments.update({'--%s' % o: config[o] for o in config})
+            for option in config:
+                if not isinstance(config[option], CONFIG_OPTIONS[option]):
+                    logger.error('Invalid type for config option %r (found %r but %r expected).',
+                                 option, type(config[option]).__name__, CONFIG_OPTIONS[option].__name__)
+                    sys.exit(1)
+
+        arguments.update({'--%s' % o: config[o] for o in config})
+
     return arguments
 
 
@@ -849,7 +866,9 @@ def main():
     # argument handling
     arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__),
                                              config_file=DEFAULT_CONFIG_FILE,
-                                             config_options=wrap(', '.join(CONFIG_OPTIONS),
+                                             config_options=wrap(', '.join("%s (%s)" % (c, k.__name__)
+                                                                           for c, k in CONFIG_OPTIONS.items()),
+                                                                 width=80,
                                                                  subsequent_indent=' ' * 4)))
 
     # progressbar handling
