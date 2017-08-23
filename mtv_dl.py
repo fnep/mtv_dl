@@ -871,10 +871,6 @@ def main():
                                                                  width=80,
                                                                  subsequent_indent=' ' * 4)))
 
-    # progressbar handling
-    global HIDE_PROGRESSBAR
-    HIDE_PROGRESSBAR = bool(arguments['--logfile']) or bool(arguments['--no-bar']) or arguments['--quiet']
-
     # broken console encoding handling  (http://archive.is/FRcJe#60%)
     if sys.stdout.encoding != 'UTF-8':
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
@@ -902,6 +898,10 @@ def main():
 
     # config handling
     arguments = load_config(arguments)
+
+    # progressbar handling
+    global HIDE_PROGRESSBAR
+    HIDE_PROGRESSBAR = bool(arguments['--logfile']) or bool(arguments['--no-bar']) or arguments['--quiet']
 
     if arguments['--verbose']:
         logger.setLevel(logging.DEBUG)
