@@ -888,7 +888,7 @@ def main():
 
     # ISO8601 logger
     if arguments['--logfile']:
-        logging_handler = logging.FileHandler(arguments['--logfile'])
+        logging_handler = logging.FileHandler(os.path.expanduser(arguments['--logfile']))
     else:
         logging_handler = logging.StreamHandler()
 
