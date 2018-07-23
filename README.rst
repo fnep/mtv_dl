@@ -122,3 +122,4 @@ This project is supported by:
 
 - .. image:: .Browserstack-logo.svg
      :target: https://www.browserstack.com/
+     :width: 20% 
