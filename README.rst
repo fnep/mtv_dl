@@ -112,3 +112,13 @@ The easiest way is to install using pip:
 .. code:: shell
 
   $ pip3 install mtv-dl
+
+Support
+-------
+
+This project is free and open source (MIT licensed). It's not very actively maintained but also not neglected. It's just here in case it's useful for somebody.
+
+This project is supported by:
+
+- .. image:: .Browserstack-logo.svg
+     :target: https://www.browserstack.com/
