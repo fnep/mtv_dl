@@ -26,6 +26,7 @@ setup(name='mtv_dl',
             'License :: Public Domain',
             'Programming Language :: Python :: 3.5',
             'Programming Language :: Python :: 3.6',
+            'License :: OSI Approved :: MIT Licenser',
       ],
       python_requires='>=3.5',
       install_requires=[str(ir.req) for ir in requirements])
