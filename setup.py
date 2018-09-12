@@ -7,7 +7,7 @@ from pip.req import parse_requirements
 requirements = parse_requirements(os.path.join(os.path.dirname(__file__), 'requirements.txt'), session='dummy')
 
 setup(name='mtv_dl',
-      version='0.2',
+      version='0.3',
       description='MediathekView Downloader',
       long_description='Command line tool to download videos from sources available through MediathekView.',
       author='Frank Epperlein',

@@ -79,7 +79,7 @@ Filters:
 
   Examples:
     - topic='extra 3'                   (topic contains 'extra 3')
-    - title!=spezial                    (title contains 'spezial')
+    - title!=spezial                    (title not contains 'spezial')
     - channel=ARD                       (channel contains ARD)
     - age-1mm                           (age is older then 1 month)
     - duration+20m                      (duration longer then 20 min)
@@ -400,6 +400,7 @@ class Database(object):
         meta = {}  # type: Dict
         items = []  # type: List
         header = []  # type: List
+        channel, topic, region = None, None, None
 
         with self._showlist() as showlist_path:
             with lzma.open(showlist_path) as fh:
@@ -429,14 +430,17 @@ class Database(object):
 
                     elif p[0] == 'X':
                         show = dict(zip(header, p[1]))
+                        channel = show.get('channel') or channel
+                        topic = show.get('topic') or topic
+                        region = show.get('region') or region
                         if show['start'] and show['url'] and show['size']:
                             item = {
-                                'channel': show['channel'] or items[-1].get('channel'),
+                                'channel': channel,
                                 'description': show['description'],
-                                'region': show['region'],
+                                'region': region,
                                 'size': int(show['size']) if show['size'] else 0,
                                 'title': show['title'],
-                                'topic': show['topic'] or items[-1].get('topic'),
+                                'topic': topic,
                                 'website': show['website'],
                                 'new': show['new'] == 'true',
                                 'url_http': show['url'] or None,
