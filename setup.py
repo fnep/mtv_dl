@@ -23,6 +23,7 @@ setup(name='mtv_dl',
                   'mtv_dl = mtv_dl:main',
             ]
       },
+      # see https://pypi.org/pypi?%3Aaction=list_classifiers
       classifiers=[
             'Topic :: Multimedia :: Video',
             'Development Status :: 4 - Beta',
@@ -30,7 +31,7 @@ setup(name='mtv_dl',
             'License :: Public Domain',
             'Programming Language :: Python :: 3.5',
             'Programming Language :: Python :: 3.6',
-            'License :: OSI Approved :: MIT Licenser',
+            'License :: OSI Approved :: MIT License',
       ],
       python_requires='>=3.5',
       install_requires=[str(ir.req) for ir in requirements])
