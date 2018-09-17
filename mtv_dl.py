@@ -806,10 +806,11 @@ class Show(dict):
             else:
                 show_file_extension = ''
 
-            if show_file_extension in ('.mp4', '.flv'):
+            if show_file_extension in ('.mp4', '.flv', '.mp3'):
                 self._move_to_user_target(show_file_path, cwd, target, show_file_name, show_file_extension)
                 return show_file_path
 
+            # TODO: consider to remove hsl/m3u8 downloads ("./mtv_dl.py dump url='[^(mp4|flv|mp3)]$'" is empty)
             elif show_file_extension == '.m3u8':
                 ts_file_path = self._download_hls_target(temp_path, show_url, quality, show_file_path)
                 self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts')
