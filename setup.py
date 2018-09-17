@@ -11,7 +11,7 @@ except ImportError: # for pip <= 9.0.3
 requirements = parse_requirements(Path(__file__).parent.joinpath('requirements.txt').as_posix(), session='dummy')
 
 setup(name='mtv_dl',
-      version='0.4',
+      version='0.5',
       description='MediathekView Downloader',
       long_description='Command line tool to download videos from sources available through MediathekView.',
       author='Frank Epperlein',
@@ -33,5 +33,5 @@ setup(name='mtv_dl',
             'Programming Language :: Python :: 3.6',
             'License :: OSI Approved :: MIT License',
       ],
-      python_requires='>=3.5',
+      python_requires='>=3.6',
       install_requires=[str(ir.req) for ir in requirements])
