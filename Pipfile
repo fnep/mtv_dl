@@ -1,0 +1,30 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+"rfc6266" = "*"
+tzlocal = "*"
+"iso8601" = "*"
+pytz = "*"
+terminaltables = "*"
+docopt = "*"
+requests = "*"
+tinydb = "*"
+tinydb-serialization = "*"
+pydash = "*"
+tqdm = "*"
+durationpy = ">=0.5"
+xxhash = "*"
+PyYAML = "*"
+
+[dev-packages]
+ipython = "*"
+setuptools = "*"
+wheel = "*"
+twine = "*"
+mypy = "*"
+
+[requires]
+python_version = "3.6"

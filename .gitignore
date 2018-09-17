@@ -5,3 +5,6 @@
 /.mypy_cache
 /dist
 /MANIFEST
+/build
+/mtv_dl.egg-info
+/Pipfile.lock
