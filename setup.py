@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import os
+from pathlib import Path
 from setuptools import setup
 
 try: # for pip >= 10
@@ -8,10 +8,10 @@ try: # for pip >= 10
 except ImportError: # for pip <= 9.0.3
     from pip.req import parse_requirements
 
-requirements = parse_requirements(os.path.join(os.path.dirname(__file__), 'requirements.txt'), session='dummy')
+requirements = parse_requirements(Path(__file__).parent.joinpath('requirements.txt').as_posix(), session='dummy')
 
 setup(name='mtv_dl',
-      version='0.3',
+      version='0.4',
       description='MediathekView Downloader',
       long_description='Command line tool to download videos from sources available through MediathekView.',
       author='Frank Epperlein',

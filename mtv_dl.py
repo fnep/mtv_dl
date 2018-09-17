@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
+# noinspection SpellCheckingInspection
 """MediathekView-Commandline-Downloader
 
 Usage:
@@ -140,6 +141,7 @@ import tempfile
 import time
 import traceback
 import urllib.parse
+from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import partial
@@ -193,7 +195,7 @@ FIELDS = {
 
 DATABASE_CACHE_FILENAME = '.Filmliste-akt.xz.cache'
 
-DEFAULT_CONFIG_FILE = '~/.mtv_dl.yml'
+DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
     'dir': str,
@@ -284,10 +286,10 @@ def flocked(fd, timeout=1.0, sleep=0.1):
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
-def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
+def pickle_cache(cache_file: Union[Callable, Path]) -> Callable:
     """ Decorator which will use "cache_file" for caching the results of the decorated function.
 
-    :param cache_file: Either the path to the cache file as string or a callable, that
+    :param cache_file: Either the path to the cache file as Path or a callable, that
         called with same (kw)arguments as the decorated function, returns the path to the designated
         cache file as string.
     """
@@ -297,13 +299,13 @@ def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
         def wrapped(*args, **kwargs):
             _cache_file = cache_file(*args, **kwargs) if callable(cache_file) else cache_file
             try:
-                with open(_cache_file, 'rb') as cache_handle:
+                with _cache_file.open('rb') as cache_handle:
                     with flocked(cache_handle, timeout=60):
                         logger.debug("Using cache from %r.", _cache_file)
                         return pickle.load(cache_handle)
             except:
                 res = fn(*args, **kwargs)
-                with open(_cache_file, 'wb') as cache_handle:
+                with _cache_file.open('wb') as cache_handle:
                     with flocked(cache_handle, timeout=60):
                         logger.debug("Saving cache to %r.", _cache_file)
                         try:
@@ -319,7 +321,7 @@ def pickle_cache(cache_file: Union[Callable, str]) -> Callable:
 
 class Database(object):
 
-    def __init__(self, cache_file_path: str) -> None:
+    def __init__(self, cache_file_path: Path) -> None:
         self.cache_file_path = cache_file_path
         self._db = None
 
@@ -356,7 +358,7 @@ class Database(object):
         return h.hexdigest()
 
     @contextmanager
-    def _showlist(self, retries: int = len(DATABASE_URLS)) -> Generator[str, None, None]:
+    def _showlist(self, retries: int = len(DATABASE_URLS)) -> Generator[Path, None, None]:
         while retries:
             retries -= 1
             try:
@@ -365,9 +367,9 @@ class Database(object):
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
                 total_size = int(response.headers.get('content-length', 0))  # type: ignore
-                fd, temp_file_path = tempfile.mkstemp(prefix='.tmp', suffix='.xz')
+                temp_file_path = Path(tempfile.mkstemp(prefix='.tmp', suffix='.xz')[1])
                 try:
-                    with open(temp_file_path, 'wb') as fh:
+                    with temp_file_path.open('wb') as fh:
                         with tqdm(total=total_size,
                                   unit='B',
                                   unit_scale=True,
@@ -379,7 +381,7 @@ class Database(object):
                                 fh.write(data)
                     yield temp_file_path
                 finally:
-                    os.unlink(temp_file_path)
+                    temp_file_path.unlink()
             except requests.exceptions.HTTPError as e:
                 if retries:
                     logger.debug('Database download failed (%d more retries): %s' % (retries, e))
@@ -392,7 +394,7 @@ class Database(object):
 
     @property  # type: ignore
     def _script_version(self) -> float:
-        return os.path.getmtime(__file__)
+        return Path(__file__).stat().st_mtime
 
     @pickle_cache(lambda db: db.cache_file_path)
     def _load(self) -> Dict[str, Union[float, List, Dict[str, Any]]]:
@@ -476,8 +478,8 @@ class Database(object):
         self._db = None
         # noinspection PyBroadException
         try:
-            os.unlink(self.cache_file_path)
-        except:
+            self.cache_file_path.unlink()
+        except OSError:
             pass
         else:
             logger.debug("Dropped cache %r.", self.cache_file_path)
@@ -496,9 +498,9 @@ class Database(object):
             logger.debug('Database age is %s.', database_age)
 
     @staticmethod
-    def read_filter_sets(sets_file_path, default_filter):
+    def read_filter_sets(sets_file_path: Path, default_filter):
         if sets_file_path:
-            with open(os.path.expanduser(sets_file_path), 'r+') as set_fh:
+            with sets_file_path.expanduser().open('r+') as set_fh:
                 for line in set_fh:
                     if line.strip():
                         yield default_filter + shlex.split(line)
@@ -582,7 +584,7 @@ class Database(object):
 
 class History(object):
 
-    def __init__(self, cwd):
+    def __init__(self, cwd: Path) -> None:
         self._cwd = cwd
 
     @property  # type: ignore
@@ -591,15 +593,11 @@ class History(object):
         history_storage = TinySerializationMiddleware()
         history_storage.register_serializer(DateTimeSerializer(), 'Datetime')
         history_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
-        history_file_path = os.path.join(self._cwd, '.history._db')
-        try:
-            os.makedirs(os.path.dirname(history_file_path))
-        except FileExistsError:
-            pass
-        finally:
-            db = TinyDB(history_file_path, default_table='history', storage=history_storage)
-            yield db
-            db.close()
+        history_file_path = self._cwd / '.history._db'
+        history_file_path.parent.mkdir(parents=True, exist_ok=True)
+        db = TinyDB(history_file_path, default_table='history', storage=history_storage)
+        yield db
+        db.close()
 
     @property  # type: ignore
     def all(self):
@@ -671,7 +669,7 @@ class Show(dict):
     def label(self) -> str:
         return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash)s]" % self
 
-    def _download_files(self, destination_dir_path: str, target_urls: List[str]) -> Generator[str, None, None]:
+    def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Generator[Path, None, None]:
 
         file_sizes = []
         with tqdm(unit='B',
@@ -690,41 +688,38 @@ class Show(dict):
                 # determine file name and destination
                 default_filename = os.path.basename(url)
                 file_name = rfc6266.parse_requests_response(response).filename_unsafe or default_filename
-                destination_file_path = os.path.join(destination_dir_path, file_name)
+                destination_file_path = destination_dir_path / file_name
 
                 # actual download
-                with open(destination_file_path, 'wb') as fh:
+                with destination_file_path.open('wb') as fh:
                     for data in response.iter_content(CHUNK_SIZE):
                         progress_bar.update(len(data))
                         fh.write(data)
 
                 yield destination_file_path
 
-    def _move_to_user_target(self, source_path, cwd, target, file_name, file_extension):
+    def _move_to_user_target(self, source_path: Path, cwd: Path, target: Path, file_name: str, file_extension: str):
 
         escaped_show_details = {k: str(v).replace(os.path.sep, '_') for k, v in self.items()}
-        destination_file_path = target.format(dir=cwd,
-                                              filename=file_name,
-                                              ext=file_extension,
-                                              date=self['start'].date().isoformat(),
-                                              time=self['start'].strftime('%H:%M'),
-                                              **escaped_show_details)
+        destination_file_path = Path(target.as_posix().format(dir=cwd,
+                                                              filename=file_name,
+                                                              ext=file_extension,
+                                                              date=self['start'].date().isoformat(),
+                                                              time=self['start'].strftime('%H:%M'),
+                                                              **escaped_show_details))
 
+        destination_file_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            try:
-                os.makedirs(os.path.dirname(destination_file_path))
-            except FileExistsError:
-                pass
-            os.rename(source_path, destination_file_path)
+            source_path.rename(destination_file_path)
         except OSError as e:
             logger.warning('Skipped %s: %s', self.label, str(e))
         else:
             logger.info('Saved %s to %r.', self.label, destination_file_path)
 
     @staticmethod
-    def _get_m3u8_segments(base_url: str, hls_file_path: str) -> Generator[Dict[str, Any], None, None]:
+    def _get_m3u8_segments(base_url: str, hls_file_path: Path) -> Generator[Dict[str, Any], None, None]:
 
-        with open(hls_file_path, 'r+') as fh:
+        with hls_file_path.open('r+') as fh:
             segment = {}  # type: Dict
             for line in fh:
                 if not line:
@@ -746,10 +741,10 @@ class Show(dict):
                     segment = {}
 
     def _download_hls_target(self,
-                             temp_dir_path: str,
+                             temp_dir_path: Path,
                              base_url: str,
                              quality_preference: Tuple[str, str, str],
-                             hls_file_path: str) -> str:
+                             hls_file_path: Path) -> Path:
 
         # get the available video streams ordered by quality
         hls_index_segments = py_ \
@@ -778,23 +773,23 @@ class Show(dict):
         logger.debug('%d HLS segments to download.', len(hls_target_segments))
 
         # download and join the segment files
-        fd, temp_file_path = tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')
-        with open(temp_file_path, 'wb') as out_fh:
+        temp_file_path = Path(tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')[1])
+        with temp_file_path.open('wb') as out_fh:
             for segment_file_path in hls_target_files:
 
-                with open(segment_file_path, 'rb') as in_fh:
+                with segment_file_path.open('rb') as in_fh:
                     out_fh.write(in_fh.read())
 
                 # delete the segment file immediately to save disk space
-                os.unlink(segment_file_path)
+                segment_file_path.unlink()
 
         return temp_file_path
 
     def __init__(self, show: Dict[str, Any], **kwargs: Dict) -> None:
         super().__init__(show, **kwargs)
 
-    def download(self, quality: Tuple[str, str, str], cwd: str, target: str) -> Union[str, None]:
-        temp_path = tempfile.mkdtemp(prefix='.tmp')
+    def download(self, quality: Tuple[str, str, str], cwd: Path, target: Path) -> Union[Path, None]:
+        temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
 
             # show url based on quality preference
@@ -804,10 +799,10 @@ class Show(dict):
 
             logger.debug('Downloading %s from %r.', self.label, show_url)
             show_file_path = list(self._download_files(temp_path, [show_url]))[0]
-            show_file_name = os.path.basename(show_file_path)
+            show_file_name = show_file_path.name
             if '.' in show_file_name:
-                show_file_extension = '.%s' % os.path.basename(show_file_path).split('.')[-1]
-                show_file_name = show_file_name[:len(show_file_extension)]
+                show_file_extension = show_file_path.suffix
+                show_file_name = show_file_path.stem
             else:
                 show_file_extension = ''
 
@@ -833,10 +828,10 @@ class Show(dict):
 
 def load_config(arguments: Dict) -> Dict:
 
-    config_file_path = os.path.expanduser(arguments['--config'] or DEFAULT_CONFIG_FILE)
+    config_file_path = (Path(arguments['--config']) if arguments['--config'] else DEFAULT_CONFIG_FILE).expanduser()
 
     try:
-        config = yaml.safe_load(open(config_file_path))
+        config = yaml.safe_load(config_file_path.open())
 
     except OSError as e:
         if arguments['--config']:
@@ -868,7 +863,7 @@ def load_config(arguments: Dict) -> Dict:
 def main():
 
     # argument handling
-    arguments = docopt.docopt(__doc__.format(cmd=os.path.basename(__file__),
+    arguments = docopt.docopt(__doc__.format(cmd=Path(__file__).name,
                                              config_file=DEFAULT_CONFIG_FILE,
                                              config_options=wrap(', '.join("%s (%s)" % (c, k.__name__)
                                                                            for c, k in CONFIG_OPTIONS.items()),
@@ -892,7 +887,7 @@ def main():
 
     # ISO8601 logger
     if arguments['--logfile']:
-        logging_handler = logging.FileHandler(os.path.expanduser(arguments['--logfile']))
+        logging_handler = logging.FileHandler(Path(arguments['--logfile']).expanduser())
     else:
         logging_handler = logging.StreamHandler()
 
@@ -915,14 +910,10 @@ def main():
         logger.setLevel(logging.INFO)
 
     # temp file and download config
-    cw_dir = os.path.abspath(os.path.expanduser(arguments['--dir']) if arguments['--dir'] else os.getcwd())
-    target_dir = os.path.expanduser(arguments['--target'])
-    try:
-        os.makedirs(cw_dir)
-    except FileExistsError:
-        pass
-    finally:
-        tempfile.tempdir = cw_dir
+    cw_dir = Path(arguments['--dir']).expanduser().absolute() if arguments['--dir'] else Path(os.getcwd())
+    target_dir = Path(arguments['--target']).expanduser()
+    cw_dir.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = cw_dir
 
     #  tracking
     history = History(cwd=cw_dir)
@@ -937,7 +928,7 @@ def main():
                 print(Table(sorted(history.all, key=lambda s: s.get('downloaded'))).as_ascii_table())
 
         else:
-            showlist = Database(cache_file_path=os.path.join(cw_dir, DATABASE_CACHE_FILENAME))
+            showlist = Database(cache_file_path=cw_dir / DATABASE_CACHE_FILENAME)
             showlist.clear_if_foreign()
             showlist.clear_if_old(refresh_after=int(arguments['--refresh-after']))
 
@@ -947,7 +938,8 @@ def main():
                     chain(*(showlist.filtered(rules=filter_set,
                                               include_future=arguments['--include-future'])
                             for filter_set
-                            in showlist.read_filter_sets(sets_file_path=arguments['--sets'],
+                            in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
+                                                                         if arguments['--sets'] else None),
                                                          default_filter=arguments['<filter>']))),
                     limit or None))
 
