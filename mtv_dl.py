@@ -171,6 +171,7 @@ CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
 
+# noinspection SpellCheckingInspection
 FIELDS = {
     'Beschreibung': 'description',
     'Datum': 'date',
@@ -295,7 +296,7 @@ def pickle_cache(cache_file: Union[Callable, Path]) -> Callable:
     """
 
     def decorator(fn):
-        # noinspection PyBroadException
+        # noinspection PyBroadException,PyPep8
         def wrapped(*args, **kwargs):
             _cache_file = cache_file(*args, **kwargs) if callable(cache_file) else cache_file
             try:
@@ -851,7 +852,7 @@ def load_config(arguments: Dict) -> Dict:
 
         else:
             for option in config:
-                if not isinstance(config[option], CONFIG_OPTIONS[option]):
+                if not isinstance(config[option], CONFIG_OPTIONS.get(option)):
                     logger.error('Invalid type for config option %r (found %r but %r expected).',
                                  option, type(config[option]).__name__, CONFIG_OPTIONS[option].__name__)
                     sys.exit(1)
