@@ -98,7 +98,7 @@ Filter sets:
 
   For --sets, a file should be given, where every line contains the same filter arguments
   that one would give on the commandline. The lines are filtered one after another and
-  then processed together.
+  then processed together. Lines starting with '#' are treated as comment.
 
   A text file could look for example like this:
 
@@ -504,7 +504,7 @@ class Database(object):
         if sets_file_path:
             with sets_file_path.expanduser().open('r+') as set_fh:
                 for line in set_fh:
-                    if line.strip():
+                    if line.strip() and not re.match(r'^\s*#', line):
                         yield default_filter + shlex.split(line)
         else:
             yield default_filter
