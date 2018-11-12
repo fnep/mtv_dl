@@ -37,7 +37,8 @@ History options:
 
 Download options:
   -h, --high                            Download best available version.
-  -l, --low                             Download the smallest available version .
+  -l, --low                             Download the smallest available version.
+  -o, --oblivious                       Download even if the show alredy is marked as downloaded.
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{dir}} (from the option --dir),
                                         {{filename}} (from server filename) and {{ext}} (file
@@ -954,7 +955,7 @@ def main():
             elif arguments['download']:
                 for item in shows:
                     show = Show(item)
-                    if not show.get('downloaded'):
+                    if not show.get('downloaded') or arguments['--oblivious']:
                         if not arguments['--mark-only']:
                             if arguments['--high']:
                                 quality_preference = ('_hd', '', '_small')
