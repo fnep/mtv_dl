@@ -62,12 +62,12 @@ Filters:
 
   The following operators and fields are available:
 
-   '='  Pattern is a regular expression case insensitive search within the field value.
-        Available for the fields 'description', 'start', 'duration', 'age', 'region',
-        'size', 'channel', 'topic', 'title', 'hash' and 'url'.
+   '='  Pattern is a search within the field value. It's a case insensitive regular expression
+        for the fields 'description', 'start', 'region', 'size', 'channel', 'topic', 'title',
+        'hash' and 'url'. For the fields 'duration' and 'age' it's a basic equality
+        comparison.
 
-   '!=' Pattern is a regular expression that must not appear in a case insensitive search
-        within the field value. Available on the same fields as for the '=' operator.
+   '!=' Inverse of the '=' operator.
 
    '+'  Pattern must be greater then the field value. Available for the fields 'duration',
         'age', 'start' and 'size'.
@@ -540,17 +540,21 @@ class Database(object):
                     checks.append((field, partial(fn, pattern)))
 
                 if operator == '=':
-                    if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
+                    if field in ('description', 'region', 'size', 'channel',
                                  'topic', 'title', 'hash', 'url_http'):
                         require(lambda p, v: bool(re.search(p, v, re.IGNORECASE)))
+                    elif field in ('duration', 'age'):
+                        require(lambda p, v: p == v)
                     elif field in ('start', ):
                         require(lambda p, v: bool(re.search(p, v.isoformat(), re.IGNORECASE)))
                     else:
                         raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
                 elif operator == '!=':
-                    if field in ('description', 'duration', 'age', 'region', 'size', 'channel',
+                    if field in ('description', 'region', 'size', 'channel',
                                  'topic', 'title', 'hash', 'url_http'):
                         require(lambda p, v: not bool(re.search(p, v, re.IGNORECASE)))
+                    elif field in ('duration', 'age'):
+                        require(lambda p, v: p != v)
                     elif field in ('start', ):
                         require(lambda p, v: not bool(re.search(p, v.isoformat(), re.IGNORECASE)))
                     else:
