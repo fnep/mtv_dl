@@ -305,14 +305,14 @@ def pickle_cache(cache_file: Union[Callable, Path]) -> Callable:
                     with flocked(cache_handle, timeout=60):
                         logger.debug("Using cache from %r.", _cache_file)
                         return pickle.load(cache_handle)
-            except:
+            except Exception:
                 res = fn(*args, **kwargs)
                 with _cache_file.open('wb') as cache_handle:
                     with flocked(cache_handle, timeout=60):
                         logger.debug("Saving cache to %r.", _cache_file)
                         try:
                             pickle.dump(res, cache_handle)
-                        except:
+                        except Exception:
                             pass
                 return res
 
@@ -509,7 +509,7 @@ class Database(object):
         else:
             yield default_filter
 
-    def filtered(self, rules: List[str], include_future: bool=False) -> Generator[Dict[str, Any], None, None]:
+    def filtered(self, rules: List[str], include_future: bool = False) -> Generator[Dict[str, Any], None, None]:
 
         checks = []
         for f in rules:
@@ -716,7 +716,7 @@ class Show(dict):
 
         destination_file_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            source_path.rename(destination_file_path)
+            shutil.move(source_path.as_posix(), destination_file_path.as_posix())
         except OSError as e:
             logger.warning('Skipped %s: %s', self.label, str(e))
         else:
