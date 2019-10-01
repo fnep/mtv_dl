@@ -49,6 +49,7 @@ Download options:
   --mark-only                           Do not download any show, but mark it as downloaded
                                         in the history. This is to initialize a new filter
                                         if upcoming shows are wanted.
+  --no-subtitles                        Do not try to download subtitles.
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
@@ -160,6 +161,7 @@ import rfc6266
 import tzlocal
 import xxhash
 import yaml
+from bs4 import BeautifulSoup
 from pydash import py_
 from terminaltables import AsciiTable
 from tinydb import TinyDB, Query as TinyQuery
@@ -206,6 +208,7 @@ CONFIG_OPTIONS = {
     'logfile': str,
     'low': bool,
     'no-bar': bool,
+    'no-subtitles': bool,
     'quiet': bool,
     'refresh-after': int,
     'target': str,
@@ -704,7 +707,13 @@ class Show(dict):
 
                 yield destination_file_path
 
-    def _move_to_user_target(self, source_path: Path, cwd: Path, target: Path, file_name: str, file_extension: str):
+    def _move_to_user_target(self,
+                             source_path: Path,
+                             cwd: Path,
+                             target: Path,
+                             file_name: str,
+                             file_extension: str,
+                             media_type: str):
 
         escaped_show_details = {k: str(v).replace(os.path.sep, '_') for k, v in self.items()}
         destination_file_path = Path(target.as_posix().format(dir=cwd,
@@ -720,7 +729,7 @@ class Show(dict):
         except OSError as e:
             logger.warning('Skipped %s: %s', self.label, str(e))
         else:
-            logger.info('Saved %s to %r.', self.label, destination_file_path)
+            logger.info('Saved %s %s to %r.', media_type, self.label, destination_file_path)
 
     @staticmethod
     def _get_m3u8_segments(base_url: str, hls_file_path: Path) -> Generator[Dict[str, Any], None, None]:
@@ -791,10 +800,48 @@ class Show(dict):
 
         return temp_file_path
 
+    @staticmethod
+    def _convert_subtitles_xml_to_srt(subtitles_xml_path: Path) -> Path:
+
+        subtitles_srt_path = subtitles_xml_path.parent / (subtitles_xml_path.stem + '.srt')
+        soup = BeautifulSoup(subtitles_xml_path.read_text(), "html.parser")
+
+        colour_to_rgb = {
+            "textBlack": "#000000",
+            "textRed": "#FF0000",
+            "textGreen": "#00FF00",
+            "textYellow": "#FFFF00",
+            "textBlue": "#0000FF",
+            "textMagenta": "#FF00FF",
+            "textCyan": "#00FFFF",
+            "textWhite": "#FFFFFF"}
+
+        def font_colour(text, colour):
+            return "<font color=\"%s\">%s</font>\n" % (colour_to_rgb[colour], text)
+
+        with subtitles_srt_path.open('w') as srt:
+            for p_tag in soup.findAll("tt:p"):
+                # noinspection PyBroadException
+                try:
+                    srt.write(str(int(p_tag.get("xml:id").replace("sub", "")) + 1) + "\n")
+                    srt.write(f"{p_tag['begin'].replace('.', ',')} --> {p_tag['end'].replace('.', ',')}\n")
+                    for span_tag in p_tag.findAll('tt:span'):
+                        srt.write(font_colour(span_tag.text, span_tag.get('style')).replace("&apos", "'"))
+                    srt.write('\n\n')
+                except Exception:
+                    logging.debug('Unexpected data in subtitle xml file: %s', p_tag)
+
+        return subtitles_srt_path
+
     def __init__(self, show: Dict[str, Any], **kwargs: Dict) -> None:
         super().__init__(show, **kwargs)
 
-    def download(self, quality: Tuple[str, str, str], cwd: Path, target: Path) -> Union[Path, None]:
+    def download(self,
+                 quality: Tuple[str, str, str],
+                 cwd: Path,
+                 target: Path,
+                 *,
+                 include_subtitles: bool = True) -> Union[Path, None]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
 
@@ -813,17 +860,24 @@ class Show(dict):
                 show_file_extension = ''
 
             if show_file_extension in ('.mp4', '.flv', '.mp3'):
-                self._move_to_user_target(show_file_path, cwd, target, show_file_name, show_file_extension)
-                return show_file_path
+                self._move_to_user_target(show_file_path, cwd, target, show_file_name, show_file_extension, 'show')
 
             # TODO: consider to remove hsl/m3u8 downloads ("./mtv_dl.py dump url='[^(mp4|flv|mp3)]$'" is empty)
             elif show_file_extension == '.m3u8':
                 ts_file_path = self._download_hls_target(temp_path, show_url, quality, show_file_path)
-                self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts')
-                return show_file_path
+                self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts', 'show')
 
             else:
                 logger.error('File extension %s of %s not supported.', show_file_extension, self.label)
+                return None
+
+            if include_subtitles and self['url_subtitles']:
+                logger.debug('Downloading subtitles for %s from %r.', self.label, self['url_subtitles'])
+                subtitles_xml_path = list(self._download_files(temp_path, [self['url_subtitles']]))[0]
+                subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
+                self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, '.srt', 'subtitles')
+
+            return show_file_path
 
         except (requests.exceptions.RequestException, OSError) as e:
             logger.error('Download of %s failed: %s', self.label, str(e))
@@ -967,7 +1021,8 @@ def main():
                                 quality_preference = ('_small', '', '_hd')
                             else:
                                 quality_preference = ('', '_hd', '_small')
-                            show.download(quality_preference, cw_dir, target_dir)
+                            show.download(quality_preference, cw_dir, target_dir,
+                                          include_subtitles=not arguments['--no-subtitles'])
                             item['downloaded'] = now
                             history.insert(item)
                         else:

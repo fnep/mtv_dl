@@ -18,6 +18,7 @@ tqdm = "*"
 durationpy = ">=0.5"
 xxhash = "*"
 PyYAML = "*"
+beautifulsoup4 = "*"
 
 [dev-packages]
 ipython = "*"
