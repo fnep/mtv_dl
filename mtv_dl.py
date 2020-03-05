@@ -20,6 +20,8 @@ Options:
   -v, --verbose                         Show more details.
   -q, --quiet                           Hide everything not really needed.
   -b, --no-bar                          Hide the progressbar.
+  --description-width=<cols>            Maximum width (in columns) of the description
+                                        in the progress bar. Default is no limit.
   -l <path>, --logfile=<path>           Log messages to a file instead of stdout.
   -r <hours>, --refresh-after=<hours>   Update database if it is older then the given
                                         number of hours. [default: 3]
@@ -173,6 +175,7 @@ from yaml.error import YAMLError
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
+DESCRIPTION_THRESHOLD = None
 
 # noinspection SpellCheckingInspection
 FIELDS = {
@@ -203,6 +206,7 @@ DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
     'dir': str,
+    'description-width': int,
     'high': bool,
     'include-future': bool,
     'logfile': str,
@@ -231,6 +235,13 @@ logger = logging.getLogger('mtv_dl')
 local_zone = tzlocal.get_localzone()
 now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
 
+
+def trim_description(s: str, length=...) -> str:
+    if length is ...:
+        length=DESCRIPTION_THRESHOLD
+    if length and len(s) > length:
+        return f"{s[:DESCRIPTION_THRESHOLD]}…"
+    return s
 
 # noinspection PyClassHasNoInit
 class DateTimeSerializer(TinySerializer):
@@ -398,7 +409,7 @@ class Database(object):
                                   unit_scale=True,
                                   leave=False,
                                   disable=HIDE_PROGRESSBAR,
-                                  desc='Downloading database') as progress_bar:
+                                  desc=trim_description('Downloading database')) as progress_bar:
                             for data in response.iter_content(CHUNK_SIZE):
                                 progress_bar.update(len(data))
                                 fh.write(data)
@@ -436,7 +447,7 @@ class Database(object):
                               unit='shows',
                               leave=False,
                               disable=HIDE_PROGRESSBAR,
-                              desc='Reading database items'):
+                              desc=trim_description('Reading database items')):
 
                     if not meta and p[0] == 'Filmliste':
                         meta = {
@@ -703,7 +714,7 @@ class Show(dict):
                   unit_scale=True,
                   leave=False,
                   disable=HIDE_PROGRESSBAR,
-                  desc='Downloading %s' % self.label) as progress_bar:
+                  desc=trim_description(f'Downloading {self.label}')) as progress_bar:
 
             for url in target_urls:
 
@@ -979,7 +990,9 @@ def main():
 
     # progressbar handling
     global HIDE_PROGRESSBAR
+    global DESCRIPTION_THRESHOLD
     HIDE_PROGRESSBAR = bool(arguments['--logfile']) or bool(arguments['--no-bar']) or arguments['--quiet']
+    DESCRIPTION_THRESHOLD = int(arguments['--description-width']) if arguments['--description-width'] else None
 
     if arguments['--verbose']:
         logger.setLevel(logging.DEBUG)
