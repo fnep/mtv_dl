@@ -128,12 +128,12 @@ Config file:
  """
 
 import codecs
-import fcntl
 import json
 import logging
 import lzma
 import os
 import pickle
+import platform
 import random
 import re
 import shlex
@@ -146,6 +146,7 @@ import urllib.parse
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from datetime import timezone
 from functools import partial
 from itertools import chain
 from itertools import islice
@@ -155,7 +156,6 @@ from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
 import docopt
 import durationpy
 import iso8601
-import pytz
 import requests
 import rfc6266
 import tzlocal
@@ -229,7 +229,7 @@ DATABASE_URLS = [
 
 logger = logging.getLogger('mtv_dl')
 local_zone = tzlocal.get_localzone()
-now = datetime.now(tz=pytz.utc).replace(second=0, microsecond=0)
+now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
 
 
 # noinspection PyClassHasNoInit
@@ -269,26 +269,44 @@ def serialize_for_json(obj: Any) -> str:
         raise TypeError('%r is not JSON serializable' % obj)
 
 
-@contextmanager
-def flocked(fd, timeout=1.0, sleep=0.1):
-    """ Contextmanager to lock a file descriptor for exclusive reading/writing. """
+if platform.system() == 'Windows':
+    @contextmanager
+    def flocked(fd, timeout=1.0, sleep=0.1):
+        yield
 
-    remaining_time = timeout
-    try:
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                yield
-            except IOError:
-                if remaining_time or not timeout:
-                    time.sleep(sleep)
+    INVALID_CHARS = '<>:"/\\|?*' + "".join(chr(i) for i in range(32))
+
+else:
+    import fcntl
+
+    @contextmanager
+    def flocked(fd, timeout=1.0, sleep=0.1):
+        """ Contextmanager to lock a file descriptor for exclusive reading/writing. """
+
+        remaining_time = timeout
+        try:
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    yield
+                except IOError:
+                    if remaining_time or not timeout:
+                        time.sleep(sleep)
+                    else:
+                        raise
                 else:
-                    raise
-            else:
-                break
+                    break
 
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+
+    INVALID_CHARS = '/\0'
+
+invalidre = re.compile("[{}]".format(re.escape(INVALID_CHARS)))
+
+
+def escape_path(s):
+    return invalidre.sub("_", s)
 
 
 def pickle_cache(cache_file: Union[Callable, Path]) -> Callable:
@@ -372,9 +390,9 @@ class Database(object):
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
                 total_size = int(response.headers.get('content-length', 0))  # type: ignore
-                temp_file_path = Path(tempfile.mkstemp(prefix='.tmp', suffix='.xz')[1])
+                fd, fname = tempfile.mkstemp(prefix='.tmp', suffix='.xz')
                 try:
-                    with temp_file_path.open('wb') as fh:
+                    with os.fdopen(fd, 'wb', closefd=False) as fh:
                         with tqdm(total=total_size,
                                   unit='B',
                                   unit_scale=True,
@@ -384,9 +402,10 @@ class Database(object):
                             for data in response.iter_content(CHUNK_SIZE):
                                 progress_bar.update(len(data))
                                 fh.write(data)
-                    yield temp_file_path
+                    yield Path(fname)
                 finally:
-                    temp_file_path.unlink()
+                    os.close(fd)
+                    os.remove(fname)
             except requests.exceptions.HTTPError as e:
                 if retries:
                     logger.debug('Database download failed (%d more retries): %s' % (retries, e))
@@ -410,11 +429,10 @@ class Database(object):
         channel, topic, region = None, None, None
 
         with self._showlist() as showlist_path:
-            with lzma.open(showlist_path) as fh:
+            with lzma.open(showlist_path, 'rt', encoding='utf-8') as fh:
 
                 logger.debug('Loading database items.')
-                reader = codecs.getreader("utf-8")
-                for p in tqdm(json.load(reader(fh), object_pairs_hook=lambda _pairs: _pairs),  # type: ignore
+                for p in tqdm(json.load(fh, object_pairs_hook=lambda _pairs: _pairs),  # type: ignore
                               unit='shows',
                               leave=False,
                               disable=HIDE_PROGRESSBAR,
@@ -423,7 +441,7 @@ class Database(object):
                     if not meta and p[0] == 'Filmliste':
                         meta = {
                             # p[1][0] is local date, p[1][1] is gmt date
-                            'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=pytz.utc),
+                            'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=timezone.utc),
                             'crawler_version': p[1][2],
                             'crawler_agent': p[1][3],
                             'list_id': p[1][4],
@@ -454,9 +472,9 @@ class Database(object):
                                 'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
                                 'url_http_small': self._qualify_url(show['url'], show['url_small']),
                                 'url_subtitles': show['url_subtitles'],
-                                'start': datetime.fromtimestamp(int(show['start']), tz=pytz.utc).astimezone(local_zone),
+                                'start': datetime.fromtimestamp(int(show['start']), tz=timezone.utc).astimezone(local_zone),
                                 'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
-                                'age': now - datetime.fromtimestamp(int(show['start']), tz=pytz.utc)
+                                'age': now - datetime.fromtimestamp(int(show['start']), tz=timezone.utc)
                             }
                             item['hash'] = self._show_hash(item)
                             items.append(item)
@@ -690,7 +708,7 @@ class Show(dict):
             for url in target_urls:
 
                 # determine file size for progressbar
-                response = requests.get(url, stream=True)
+                response = requests.get(url, stream=True, timeout=60)
                 file_sizes.append(int(response.headers.get('content-length', 0)))  # type: ignore
                 progress_bar.total = sum(file_sizes) / len(file_sizes) * len(target_urls)
 
@@ -715,19 +733,19 @@ class Show(dict):
                              file_extension: str,
                              media_type: str):
 
-        escaped_show_details = {k: str(v).replace(os.path.sep, '_') for k, v in self.items()}
+        escaped_show_details = {k: escape_path(str(v)) for k, v in self.items()}
         destination_file_path = Path(target.as_posix().format(dir=cwd,
                                                               filename=file_name,
                                                               ext=file_extension,
                                                               date=self['start'].date().isoformat(),
-                                                              time=self['start'].strftime('%H:%M'),
+                                                              time=self['start'].strftime('%H-%M'),
                                                               **escaped_show_details))
 
         destination_file_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.move(source_path.as_posix(), destination_file_path.as_posix())
+            shutil.move(source_path, destination_file_path)
         except OSError as e:
-            logger.warning('Skipped %s: %s', self.label, str(e))
+            logger.warning('Skipped %s. Moving %r to %r failed: %s', self.label, source_path, destination_file_path, e)
         else:
             logger.info('Saved %s %s to %r.', media_type, self.label, destination_file_path)
 
@@ -829,7 +847,7 @@ class Show(dict):
                         srt.write(font_colour(span_tag.text, span_tag.get('style')).replace("&apos", "'"))
                     srt.write('\n\n')
                 except Exception:
-                    logging.debug('Unexpected data in subtitle xml file: %s', p_tag)
+                    logger.debug('Unexpected data in subtitle xml file: %s', p_tag)
 
         return subtitles_srt_path
 
@@ -880,7 +898,7 @@ class Show(dict):
             return show_file_path
 
         except (requests.exceptions.RequestException, OSError) as e:
-            logger.error('Download of %s failed: %s', self.label, str(e))
+            logger.error('Download of %s failed: %s', self.label, e)
         finally:
             shutil.rmtree(temp_path)
 
