@@ -116,7 +116,9 @@ The easiest way is to install using pip:
 Support
 -------
 
-This project is free and open source (MIT licensed). It's not very actively maintained but also not neglected. It's just here in case it's useful for somebody.
+This project is free and open source (MIT licensed). It's not very actively maintained but also not neglected. It's just here in case it's useful for somebody. 
+
+Für "Issues": Ich komme aus Dresden und spreche auch Deutsch.
 
 This project is supported by:
 
