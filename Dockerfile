@@ -1,9 +1,11 @@
 FROM python:3.8
 
-RUN pip3 install mtv_dl
+COPY pyproject.toml DESCRIPTION.rst mtv_dl.py /
+RUN pip3 install poetry
+RUN poetry install --no-dev
 
 RUN mkdir /data
 VOLUME /data
 WORKDIR /data
 
-ENTRYPOINT ["mtv_dl"]
+ENTRYPOINT ["poetry", "run", "mtv_dl"]
