@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "mtv_dl"
+version = "0.10"
+description = "MediathekView Downloader"
+readme = "DESCRIPTION.rst"
+authors = ["Frank Epperlein <frank+mtv_dl@epperle.in>"]
+repository = "https://github.com/efenka/mtv_dl"
+license = "MIT License"
+classifiers = [
+    "Topic :: Multimedia :: Video",
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "License :: Public Domain",
+    "Programming Language :: Python :: 3.6",
+    "License :: OSI Approved :: MIT License",
+]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+rfc6266 = "^0.0.4"
+tzlocal = "^2.0.0"
+iso8601 = "^0.1.12"
+pytz = "^2019.3"
+terminaltables = "^3.1.0"
+docopt = "^0.6.2"
+requests = "^2.23.0"
+tinydb = "^3.15.2"
+tinydb-serialization = "^1.0.4"
+pydash = "^4.7.6"
+tqdm = "^4.43.0"
+durationpy = ">=0.5"
+xxhash = "^1.4.3"
+PyYAML = "^5.3"
+beautifulsoup4 = "^4.8.2"
+
+[tool.poetry.dev-dependencies]
+mypy = "^0.770"
+twine = "^3.1.1"
+
+[tool.poetry.scripts]
+mtv_dl = 'mtv_dl:main'
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
