@@ -134,26 +134,32 @@ import json
 import logging
 import lzma
 import os
-import pickle
 import platform
 import random
 import re
 import shlex
 import shutil
+import sqlite3
 import sys
 import tempfile
 import time
 import traceback
 import urllib.parse
-from pathlib import Path
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
+from datetime import timedelta
 from datetime import timezone
-from functools import partial
 from itertools import chain
-from itertools import islice
+from pathlib import Path
 from textwrap import fill as wrap
-from typing import Union, Callable, List, Dict, Any, Generator, Iterable, Tuple
+from typing import Any
+from typing import Dict
+from typing import Generator
+from typing import Iterable
+from typing import List
+from typing import Optional
+from typing import Tuple
+from typing import Union
 
 import docopt
 import durationpy
@@ -166,7 +172,8 @@ import yaml
 from bs4 import BeautifulSoup
 from pydash import py_
 from terminaltables import AsciiTable
-from tinydb import TinyDB, Query as TinyQuery
+from tinydb import Query as TinyQuery
+from tinydb import TinyDB
 from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
 from tinydb_serialization import Serializer as TinySerializer
 from tqdm import tqdm
@@ -200,7 +207,7 @@ FIELDS = {
     'neu': 'new'
 }
 
-DATABASE_CACHE_FILENAME = '.Filmliste-akt.xz.cache'
+FILMLISTE_DATABASE_FILE = '.Filmliste.{script_version}.sqlite'
 
 DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
@@ -222,6 +229,7 @@ CONFIG_OPTIONS = {
 
 # see https://res.mediathekview.de/akt.xml
 DATABASE_URLS = [
+    "https://liste.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler2.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler3.mediathekview.de/Filmliste-akt.xz"
@@ -281,36 +289,8 @@ def serialize_for_json(obj: Any) -> str:
 
 
 if platform.system() == 'Windows':
-    @contextmanager
-    def flocked(fd, timeout=1.0, sleep=0.1):
-        yield
-
     INVALID_CHARS = '<>:"/\\|?*' + "".join(chr(i) for i in range(32))
-
 else:
-    import fcntl
-
-    @contextmanager
-    def flocked(fd, timeout=1.0, sleep=0.1):
-        """ Contextmanager to lock a file descriptor for exclusive reading/writing. """
-
-        remaining_time = timeout
-        try:
-            while True:
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    yield
-                except IOError:
-                    if remaining_time or not timeout:
-                        time.sleep(sleep)
-                    else:
-                        raise
-                else:
-                    break
-
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-
     INVALID_CHARS = '/\0'
 
 invalidre = re.compile("[{}]".format(re.escape(INVALID_CHARS)))
@@ -320,44 +300,87 @@ def escape_path(s):
     return invalidre.sub("_", s)
 
 
-def pickle_cache(cache_file: Union[Callable, Path]) -> Callable:
-    """ Decorator which will use "cache_file" for caching the results of the decorated function.
-
-    :param cache_file: Either the path to the cache file as Path or a callable, that
-        called with same (kw)arguments as the decorated function, returns the path to the designated
-        cache file as string.
-    """
-
-    def decorator(fn):
-        # noinspection PyBroadException,PyPep8
-        def wrapped(*args, **kwargs):
-            _cache_file = cache_file(*args, **kwargs) if callable(cache_file) else cache_file
-            try:
-                with _cache_file.open('rb') as cache_handle:
-                    with flocked(cache_handle, timeout=60):
-                        logger.debug("Using cache from %r.", _cache_file)
-                        return pickle.load(cache_handle)
-            except Exception:
-                res = fn(*args, **kwargs)
-                with _cache_file.open('wb') as cache_handle:
-                    with flocked(cache_handle, timeout=60):
-                        logger.debug("Saving cache to %r.", _cache_file)
-                        try:
-                            pickle.dump(res, cache_handle)
-                        except Exception:
-                            pass
-                return res
-
-        return wrapped
-
-    return decorator
-
-
 class Database(object):
 
-    def __init__(self, cache_file_path: Path) -> None:
-        self.cache_file_path = cache_file_path
-        self._db = None
+    @property
+    def user_version(self) -> int:
+        cursor = self.connection.cursor()
+        return cursor.execute('PRAGMA user_version;').fetchone()[0]
+
+    def initialize(self) -> None:
+        cursor = self.connection.cursor()
+        cursor.execute("PRAGMA database_list")
+        database_file = cursor.fetchone()[2]
+        logger.debug('Initializing database in %r', database_file)
+        try:
+            cursor.execute("""        
+                CREATE TABlE show (
+                    hash TEXT,
+                    channel TEXT,
+                    description TEXT,
+                    region TEXT,
+                    size INTEGER,
+                    title TEXT,
+                    topic TEXT,
+                    website TEXT,
+                    new BOOLEAN,
+                    url_http TEXT,
+                    url_http_hd TEXT,
+                    url_http_small TEXT,
+                    url_subtitles TEXT,
+                    start TIMESTAMP,
+                    duration INTEGER
+                );
+            """)
+        except sqlite3.OperationalError:
+            cursor.execute("DELETE TABLE show")
+        else:
+            cursor.execute("""
+                CREATE VIEW show_view AS
+                SELECT *,
+                       CAST((julianday(CURRENT_TIMESTAMP) - julianday(start)) * 86400.0 AS INTEGER) AS age
+                FROM show
+    
+            """)
+        cursor.execute(f'PRAGMA user_version={int(now.timestamp())}')
+        self.connection.commit()
+
+        # get show data
+        cursor.executemany("""
+            INSERT INTO show
+            VALUES (
+                :hash,
+                :channel,
+                :description,
+                :region,
+                :size,
+                :title,
+                :topic,
+                :website,
+                :new,
+                :url_http,
+                :url_http_hd,
+                :url_http_small,
+                :url_subtitles,
+                :start,
+                :duration
+            ) 
+        """, self._get_shows())
+
+        self.connection.commit()
+
+
+    def __init__(self, database: Path) -> None:
+        database_path = database.parent / database.name.format(script_version=self._script_version)
+        logger.debug('Opening database %r', database_path)
+        self.connection = sqlite3.connect(database_path.absolute().as_posix(),
+                                          detect_types=sqlite3.PARSE_DECLTYPES,
+                                          timeout=10)
+        self.connection.row_factory = sqlite3.Row
+        self.connection.create_function("REGEXP", 2,
+                                        lambda expr, item: re.compile(expr, re.IGNORECASE).search(item) is not None)
+        if self.user_version == 0:
+            self.initialize()
 
     @staticmethod
     def _qualify_url(basis: str, extension: str) -> Union[str, None]:
@@ -423,22 +446,18 @@ class Database(object):
                 else:
                     logger.error('Database download failed (no more retries): %s' % e)
                     raise requests.exceptions.HTTPError('retry limit reached, giving up')
-                time.sleep(5 - retries)
+                time.sleep(5)
             else:
                 break
 
-    @property  # type: ignore
+    @property
     def _script_version(self) -> float:
-        return Path(__file__).stat().st_mtime
+        return int(Path(__file__).stat().st_mtime)
 
-    @pickle_cache(lambda db: db.cache_file_path)
-    def _load(self) -> Dict[str, Union[float, List, Dict[str, Any]]]:
-
-        meta = {}  # type: Dict
-        items = []  # type: List
-        header = []  # type: List
+    def _get_shows(self) -> Iterable[Dict[str, Any]]:
+        meta: Dict = {}
+        header: List = []
         channel, topic, region = None, None, None
-
         with self._showlist() as showlist_path:
             with lzma.open(showlist_path, 'rt', encoding='utf-8') as fh:
 
@@ -483,51 +502,17 @@ class Database(object):
                                 'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
                                 'url_http_small': self._qualify_url(show['url'], show['url_small']),
                                 'url_subtitles': show['url_subtitles'],
-                                'start': datetime.fromtimestamp(int(show['start']), tz=timezone.utc).astimezone(local_zone),
-                                'duration': timedelta(seconds=self._duration_in_seconds(show['duration'])),
-                                'age': now - datetime.fromtimestamp(int(show['start']), tz=timezone.utc)
+                                'start': datetime.fromtimestamp(int(show['start']), tz=timezone.utc).replace(tzinfo=None),
+                                'duration': self._duration_in_seconds(show['duration']),
                             }
                             item['hash'] = self._show_hash(item)
-                            items.append(item)
+                            yield item
 
-        return {
-            'version': self._script_version,
-            'meta': meta,
-            'shows': items
-        }
-
-    @property
-    def db(self):
-        if not self._db:
-            self._db = self._load()
-        return self._db
-
-    @property
-    def shows(self) -> List[Dict[str, Any]]:
-        return self.db['shows']
-
-    def clear(self):
-        """ Drop the pickled cache file for this database. """
-
-        self._db = None
-        # noinspection PyBroadException
-        try:
-            self.cache_file_path.unlink()
-        except OSError:
-            pass
-        else:
-            logger.debug("Dropped cache %r.", self.cache_file_path)
-
-    def clear_if_foreign(self):
-        if self.db['version'] != self._script_version:
-            logger.debug('Database is for a different script version.')
-            self.clear()
-
-    def clear_if_old(self, refresh_after):
-        database_age = now - self.db['meta']['date']
+    def initialize_if_old(self, refresh_after):
+        database_age = now - datetime.fromtimestamp(self.user_version, tz=timezone.utc)
         if database_age > timedelta(hours=refresh_after):
             logger.debug('Database age is %s (too old).', database_age)
-            self.clear()
+            self.initialize()
         else:
             logger.debug('Database age is %s.', database_age)
 
@@ -541,83 +526,102 @@ class Database(object):
         else:
             yield default_filter
 
-    def filtered(self, rules: List[str], include_future: bool = False) -> Generator[Dict[str, Any], None, None]:
+    def filtered(self,
+                 rules: List[str],
+                 include_future: bool = False,
+                 limit = Optional[int]) -> Iterable[Dict[str, Any]]:
 
-        checks = []
-        for f in rules:
-            match = re.match(r'^(?P<field>\w+)(?P<operator>(?:=|!=|\+|-|\W+))(?P<pattern>.*)$', f)
-            if match:
+        where = []
+        arguments = []
+        if rules:
+            logger.debug('Applying filter: %s', ', '.join(rules))
 
-                field, operator, pattern = match.group('field'), \
-                                           match.group('operator'), \
-                                           match.group('pattern')  # type: str, str, Any
+            for f in rules:
+                match = re.match(r'^(?P<field>\w+)(?P<operator>(?:=|!=|\+|-|\W+))(?P<pattern>.*)$', f)
+                if match:
+                    field, operator, pattern = match.group('field'), \
+                                               match.group('operator'), \
+                                               match.group('pattern')  # type: str, str, Any
 
-                if field in ('duration', 'age'):
-                    pattern = durationpy.from_str(pattern)
-                elif field in ('start', ) and operator in ('+', '-'):
-                    pattern = iso8601.parse_date(pattern)
-                elif field in ('size', ):
-                    pattern = int(pattern)
-                elif field in ('description', 'region', 'size', 'channel', 'topic', 'title', 'hash', 'url', 'start'):
-                    pattern = str(pattern)
-                else:
-                    raise ConfigurationError('Invalid filter field: %r' % field)
+                    # replace odd names
+                    field = {
+                        'url': 'url_http'
+                    }.get(field, field)
 
-                # replace odd names
-                field = {
-                    'url': 'url_http'
-                }.get(field, field)
+                    if operator == '=':
+                        if field in ('description', 'region', 'size', 'channel',
+                                     'topic', 'title', 'hash', 'url_http'):
+                            where.append(f"{field} REGEXP ?")
+                            arguments.append(str(pattern))
+                        elif field in ('duration', 'age'):
+                            where.append(f"{field}=?")
+                            arguments.append(durationpy.from_str(pattern).total_seconds())
+                        elif field in ('start',):
+                            where.append(f"{field}=?")
+                            arguments.append(iso8601.parse_date(pattern).isoformat())
+                        else:
+                            raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
-                def require(fn):
-                    checks.append((field, partial(fn, pattern)))
+                    elif operator == '!=':
+                        if field in ('description', 'region', 'size', 'channel',
+                                     'topic', 'title', 'hash', 'url_http'):
+                            where.append(f"{field} NOT REGEXP ?")
+                            arguments.append(str(pattern))
+                        elif field in ('duration', 'age'):
+                            where.append(f"{field}!=?")
+                            arguments.append(durationpy.from_str(pattern).total_seconds())
+                        elif field in ('start',):
+                            where.append(f"{field}!=?")
+                            arguments.append(iso8601.parse_date(pattern).isoformat())
+                        else:
+                            raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
-                if operator == '=':
-                    if field in ('description', 'region', 'size', 'channel',
-                                 'topic', 'title', 'hash', 'url_http'):
-                        require(lambda p, v: bool(re.search(p, v, re.IGNORECASE)))
-                    elif field in ('duration', 'age'):
-                        require(lambda p, v: p == v)
-                    elif field in ('start', ):
-                        require(lambda p, v: bool(re.search(p, v.isoformat(), re.IGNORECASE)))
+                    elif operator == '-':
+                        if field in ('duration', 'age'):
+                            where.append(f"{field}<=?")
+                            arguments.append(durationpy.from_str(pattern).total_seconds())
+                        elif field == 'size':
+                            where.append(f"{field}<=?")
+                            arguments.append(int(pattern))
+                        elif field == 'start':
+                            where.append(f"{field}<=?")
+                            arguments.append(iso8601.parse_date(pattern))
+                        else:
+                            raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
+
+                    elif operator == '+':
+                        if field in ('duration', 'age'):
+                            where.append(f"{field}>=?")
+                            arguments.append(durationpy.from_str(pattern).total_seconds())
+                        elif field == 'size':
+                            where.append(f"{field}>=?")
+                            arguments.append(int(pattern))
+                        elif field == 'start':
+                            where.append(f"{field}>=?")
+                            arguments.append(iso8601.parse_date(pattern))
+                        else:
+                            raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
+
                     else:
-                        raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
-                elif operator == '!=':
-                    if field in ('description', 'region', 'size', 'channel',
-                                 'topic', 'title', 'hash', 'url_http'):
-                        require(lambda p, v: not bool(re.search(p, v, re.IGNORECASE)))
-                    elif field in ('duration', 'age'):
-                        require(lambda p, v: p != v)
-                    elif field in ('start', ):
-                        require(lambda p, v: not bool(re.search(p, v.isoformat(), re.IGNORECASE)))
-                    else:
-                        raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
-                elif operator == '-':
-                    if field not in ('duration', 'age', 'size', 'start'):
-                        raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
-                    require(lambda p, v: v <= p)
-                elif operator == '+':
-                    if field not in ('duration', 'age', 'size', 'start'):
-                        raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
-                    require(lambda p, v: v >= p)
-                else:
-                    raise ConfigurationError('Invalid operator: %r' % operator)
+                        raise ConfigurationError('Invalid operator: %r' % operator)
 
-            else:
-                raise ConfigurationError('Invalid filter definition. '
-                                         'Property and filter rule expected separated by an operator.')
-
-        logger.debug('Applying filter: %s', ', '.join(rules))
-        for row in self.shows:
-            if not include_future and row['start'] > now:
-                continue
-            try:
-                if not checks:
-                    yield row
                 else:
-                    if all(fn(row.get(field)) for field, fn in checks):
-                        yield row
-            except (ValueError, TypeError):
-                pass
+                    raise ConfigurationError('Invalid filter definition. '
+                                             'Property and filter rule expected separated by an operator.')
+
+        if not include_future:
+            where.append("date(start) < date('now')")
+
+        query = "SELECT * FROM show_view "
+        if where:
+            query += f"WHERE {' AND '.join(where)} "
+        if limit:
+            query += f"LIMIT {limit} "
+
+        cursor = self.connection.cursor()
+        cursor.execute(query, arguments)
+        for row in cursor:
+            yield dict(row)
 
 
 class History(object):
@@ -686,14 +690,14 @@ class Table(object):
     def __init__(self, shows: Iterable[Dict[str, Any]], headers: List[str] = None) -> None:
         self.headers = headers if isinstance(headers, list) else self._default_headers  # type: List
         # noinspection PyTypeChecker
-        self.data = [[self._escape_cell(row.get(h)) for h in self.headers] for row in shows]
+        self.data = [[self._escape_cell(t, row.get(t)) for t in self.headers] for row in shows]
 
     @staticmethod
-    def _escape_cell(obj: Any) -> str:
+    def _escape_cell(title: str, obj: Any) -> str:
         if isinstance(obj, datetime):
             return obj.isoformat()
-        elif isinstance(obj, timedelta):
-            return re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip()
+        elif title in ('age', 'duration'):
+            return re.sub(r'(\d+)', r' \1', durationpy.to_str(timedelta(seconds=obj), extended=True)).strip()
         else:
             return str(obj)
 
@@ -1020,20 +1024,19 @@ def main():
                 print(Table(sorted(history.all, key=lambda s: s.get('downloaded'))).as_ascii_table())
 
         else:
-            showlist = Database(cache_file_path=cw_dir / DATABASE_CACHE_FILENAME)
-            showlist.clear_if_foreign()
-            showlist.clear_if_old(refresh_after=int(arguments['--refresh-after']))
+            showlist = Database(database=cw_dir / FILMLISTE_DATABASE_FILE)
+            showlist.initialize_if_old(refresh_after=int(arguments['--refresh-after']))
 
             limit = int(arguments['--count']) if arguments['list'] else None
             shows = history.check(
-                islice(
-                    chain(*(showlist.filtered(rules=filter_set,
-                                              include_future=arguments['--include-future'])
-                            for filter_set
-                            in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
-                                                                         if arguments['--sets'] else None),
-                                                         default_filter=arguments['<filter>']))),
-                    limit or None))
+                chain(*(showlist.filtered(rules=filter_set,
+                                          include_future=arguments['--include-future'],
+                                          limit=limit or None)
+                        for filter_set
+                        in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
+                                                                     if arguments['--sets'] else None),
+                                                     default_filter=arguments['<filter>'])))
+            )
 
             if arguments['list']:
                 print(Table(shows).as_ascii_table())
