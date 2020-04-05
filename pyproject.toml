@@ -29,9 +29,9 @@ tinydb-serialization = "^1.0.4"
 pydash = "^4.7.6"
 tqdm = "^4.43.0"
 durationpy = ">=0.5"
-xxhash = "^1.4.3"
 PyYAML = "^5.3"
 beautifulsoup4 = "^4.8.2"
+typing_extensions = "^3.7.4"
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.770"

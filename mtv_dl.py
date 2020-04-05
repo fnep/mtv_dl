@@ -130,6 +130,7 @@ Config file:
  """
 
 import codecs
+import hashlib
 import json
 import logging
 import lzma
@@ -167,7 +168,6 @@ import iso8601
 import requests
 import rfc6266
 import tzlocal
-import xxhash
 import yaml
 from bs4 import BeautifulSoup
 from pydash import py_
@@ -177,6 +177,7 @@ from tinydb import TinyDB
 from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
 from tinydb_serialization import Serializer as TinySerializer
 from tqdm import tqdm
+from typing_extensions import TypedDict
 from yaml.error import YAMLError
 
 CHUNK_SIZE = 128 * 1024
@@ -251,6 +252,12 @@ def trim_description(s: str, length=...) -> str:
         return f"{s[:DESCRIPTION_THRESHOLD]}…"
     return s
 
+
+# add timedelta database type
+sqlite3.register_adapter(timedelta, lambda v: v.total_seconds())
+sqlite3.register_converter("timedelta", lambda v: timedelta(seconds=int(v)))
+
+
 # noinspection PyClassHasNoInit
 class DateTimeSerializer(TinySerializer):
 
@@ -302,6 +309,25 @@ def escape_path(s):
 
 class Database(object):
 
+    class Item(TypedDict):
+        hash: str
+        channel: str
+        description: str
+        region: str
+        size: int
+        title: str
+        topic: str
+        website: str
+        new: bool
+        url_http: Optional[str]
+        url_http_hd: Optional[str]
+        url_http_small: Optional[str]
+        url_subtitles: str
+        start: datetime
+        duration: timedelta
+        age: timedelta
+        downloaded: Optional[bool]
+
     @property
     def user_version(self) -> int:
         cursor = self.connection.cursor()
@@ -329,19 +355,12 @@ class Database(object):
                     url_http_small TEXT,
                     url_subtitles TEXT,
                     start TIMESTAMP,
-                    duration INTEGER
+                    duration TIMEDELTA,
+                    age TIMEDELTA
                 );
             """)
         except sqlite3.OperationalError:
             cursor.execute("DELETE TABLE show")
-        else:
-            cursor.execute("""
-                CREATE VIEW show_view AS
-                SELECT *,
-                       CAST((julianday(CURRENT_TIMESTAMP) - julianday(start)) * 86400.0 AS INTEGER) AS age
-                FROM show
-    
-            """)
         cursor.execute(f'PRAGMA user_version={int(now.timestamp())}')
         self.connection.commit()
 
@@ -363,12 +382,12 @@ class Database(object):
                 :url_http_small,
                 :url_subtitles,
                 :start,
-                :duration
+                :duration,
+                :age
             ) 
         """, self._get_shows())
 
         self.connection.commit()
-
 
     def __init__(self, database: Path) -> None:
         database_path = database.parent / database.name.format(script_version=self._script_version)
@@ -405,13 +424,13 @@ class Database(object):
         return 0
 
     @staticmethod
-    def _show_hash(show: Dict) -> str:
-        h = xxhash.xxh32()
-        h.update(show.get('channel'))
-        h.update(show.get('topic'))
-        h.update(show.get('title'))
-        h.update(str(show.get('size')))
-        h.update(str(show.get('start').timestamp()))
+    def _show_hash(channel: str, topic: str, title: str, size: int, start: datetime) -> str:
+        h = hashlib.sha1()
+        h.update(channel.encode())
+        h.update(topic.encode())
+        h.update(title.encode())
+        h.update(str(size).encode())
+        h.update(str(start.timestamp()).encode())
         return h.hexdigest()
 
     @contextmanager
@@ -454,10 +473,10 @@ class Database(object):
     def _script_version(self) -> float:
         return int(Path(__file__).stat().st_mtime)
 
-    def _get_shows(self) -> Iterable[Dict[str, Any]]:
+    def _get_shows(self) -> Iterable["Database.Item"]:
         meta: Dict = {}
         header: List = []
-        channel, topic, region = None, None, None
+        channel, topic, region = '', '', ''
         with self._showlist() as showlist_path:
             with lzma.open(showlist_path, 'rt', encoding='utf-8') as fh:
 
@@ -489,24 +508,29 @@ class Database(object):
                         topic = show.get('topic') or topic
                         region = show.get('region') or region
                         if show['start'] and show['url'] and show['size']:
-                            item = {
+                            title = show['title']
+                            size = int(show['size']) if show['size'] else 0
+                            start = datetime.fromtimestamp(int(show['start']), tz=timezone.utc).replace(tzinfo=None)
+                            duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
+                            yield {
+                                'hash': self._show_hash(channel, topic, title, size, start),
                                 'channel': channel,
                                 'description': show['description'],
                                 'region': region,
-                                'size': int(show['size']) if show['size'] else 0,
-                                'title': show['title'],
+                                'size': size,
+                                'title': title,
                                 'topic': topic,
                                 'website': show['website'],
                                 'new': show['new'] == 'true',
-                                'url_http': show['url'] or None,
+                                'url_http': str(show['url']) or None,
                                 'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
                                 'url_http_small': self._qualify_url(show['url'], show['url_small']),
                                 'url_subtitles': show['url_subtitles'],
-                                'start': datetime.fromtimestamp(int(show['start']), tz=timezone.utc).replace(tzinfo=None),
-                                'duration': self._duration_in_seconds(show['duration']),
+                                'start': start,
+                                'duration': duration,
+                                'age': now.replace(tzinfo=None)-start,
+                                'downloaded': None,
                             }
-                            item['hash'] = self._show_hash(item)
-                            yield item
 
     def initialize_if_old(self, refresh_after):
         database_age = now - datetime.fromtimestamp(self.user_version, tz=timezone.utc)
@@ -529,10 +553,10 @@ class Database(object):
     def filtered(self,
                  rules: List[str],
                  include_future: bool = False,
-                 limit = Optional[int]) -> Iterable[Dict[str, Any]]:
+                 limit = Optional[int]) -> Iterable["Database.Item"]:
 
         where = []
-        arguments = []
+        arguments: List[Any] = []
         if rules:
             logger.debug('Applying filter: %s', ', '.join(rules))
 
@@ -612,7 +636,7 @@ class Database(object):
         if not include_future:
             where.append("date(start) < date('now')")
 
-        query = "SELECT * FROM show_view "
+        query = "SELECT * FROM show "
         if where:
             query += f"WHERE {' AND '.join(where)} "
         if limit:
@@ -646,13 +670,15 @@ class History(object):
         with self.db as db:
             return db.all()
 
-    def check(self, shows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+    def check(self, shows: Iterable[Database.Item]) -> Iterable[Database.Item]:
         row = TinyQuery()
         with self.db as db:
             for item in shows:
                 historic_download = db.get(row.hash == item['hash'])
                 if historic_download:
                     item['downloaded'] = historic_download['downloaded']
+                else:
+                    item['downloaded'] = False
                 yield item
 
     def purge(self):
@@ -687,17 +713,19 @@ class Table(object):
                         'region',
                         'downloaded']
 
-    def __init__(self, shows: Iterable[Dict[str, Any]], headers: List[str] = None) -> None:
+    def __init__(self, shows: Iterable[Database.Item], headers: List[str] = None) -> None:
         self.headers = headers if isinstance(headers, list) else self._default_headers  # type: List
         # noinspection PyTypeChecker
         self.data = [[self._escape_cell(t, row.get(t)) for t in self.headers] for row in shows]
 
     @staticmethod
     def _escape_cell(title: str, obj: Any) -> str:
-        if isinstance(obj, datetime):
+        if title=='hash':
+            return str(obj)[:11]
+        elif isinstance(obj, datetime):
             return obj.isoformat()
-        elif title in ('age', 'duration'):
-            return re.sub(r'(\d+)', r' \1', durationpy.to_str(timedelta(seconds=obj), extended=True)).strip()
+        elif isinstance(obj, timedelta):
+            return re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip()
         else:
             return str(obj)
 
@@ -758,7 +786,7 @@ class Show(dict):
 
         destination_file_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.move(source_path, destination_file_path)
+            shutil.move(source_path.as_posix(), destination_file_path)
         except OSError as e:
             logger.warning('Skipped %s. Moving %r to %r failed: %s', self.label, source_path, destination_file_path, e)
         else:
@@ -944,7 +972,8 @@ def load_config(arguments: Dict) -> Dict:
 
         else:
             for option in config:
-                if not isinstance(config[option], CONFIG_OPTIONS.get(option)):
+                option_type = CONFIG_OPTIONS.get(option)
+                if option_type and not isinstance(config[option], option_type):
                     logger.error('Invalid type for config option %r (found %r but %r expected).',
                                  option, type(config[option]).__name__, CONFIG_OPTIONS[option].__name__)
                     sys.exit(1)
