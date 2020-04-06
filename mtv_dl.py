@@ -733,7 +733,7 @@ class Show(Dict[str, Any]):
 
     @property
     def label(self) -> str:
-        return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash)s]" % self
+        return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash).11s]" % self
 
     def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
 
