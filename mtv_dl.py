@@ -157,6 +157,7 @@ from typing import Any
 from typing import Dict
 from typing import Generator
 from typing import Iterable
+from typing import Iterator
 from typing import List
 from typing import Optional
 from typing import Tuple
@@ -245,10 +246,8 @@ local_zone = tzlocal.get_localzone()
 now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
 
 
-def trim_description(s: str, length=...) -> str:
-    if length is ...:
-        length=DESCRIPTION_THRESHOLD
-    if length and len(s) > length:
+def trim_description(s: str) -> str:
+    if isinstance(DESCRIPTION_THRESHOLD, int) and len(s) > DESCRIPTION_THRESHOLD:
         return f"{s[:DESCRIPTION_THRESHOLD]}…"
     return s
 
@@ -263,10 +262,10 @@ class DateTimeSerializer(TinySerializer):
 
     OBJ_CLASS = datetime
 
-    def encode(self, obj):
+    def encode(self, obj: datetime) -> str:
         return obj.strftime('%Y-%m-%dT%H:%M:%S')
 
-    def decode(self, s):
+    def decode(self, s: str) -> datetime:
         return datetime.strptime(s, '%Y-%m-%dT%H:%M:%S')
 
 
@@ -275,10 +274,10 @@ class TimedeltaSerializer(TinySerializer):
 
     OBJ_CLASS = timedelta
 
-    def encode(self, obj):
+    def encode(self, obj: timedelta) -> str:
         return str(obj.total_seconds())
 
-    def decode(self, s):
+    def decode(self, s: str) -> timedelta:
         return timedelta(seconds=float(s))
 
 
@@ -303,7 +302,7 @@ else:
 invalidre = re.compile("[{}]".format(re.escape(INVALID_CHARS)))
 
 
-def escape_path(s):
+def escape_path(s: str) -> str:
     return invalidre.sub("_", s)
 
 
@@ -326,12 +325,12 @@ class Database(object):
         start: datetime
         duration: timedelta
         age: timedelta
-        downloaded: Optional[bool]
+        downloaded: Optional[datetime]
 
     @property
     def user_version(self) -> int:
         cursor = self.connection.cursor()
-        return cursor.execute('PRAGMA user_version;').fetchone()[0]
+        return int(cursor.execute('PRAGMA user_version;').fetchone()[0])
 
     def initialize(self) -> None:
         cursor = self.connection.cursor()
@@ -362,7 +361,6 @@ class Database(object):
         except sqlite3.OperationalError:
             cursor.execute("DELETE TABLE show")
         cursor.execute(f'PRAGMA user_version={int(now.timestamp())}')
-        self.connection.commit()
 
         # get show data
         cursor.executemany("""
@@ -442,7 +440,7 @@ class Database(object):
                 logger.debug('Opening database from %r.', url)
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))  # type: ignore
+                total_size = int(response.headers.get('content-length', 0))
                 fd, fname = tempfile.mkstemp(prefix='.tmp', suffix='.xz')
                 try:
                     with os.fdopen(fd, 'wb', closefd=False) as fh:
@@ -474,14 +472,14 @@ class Database(object):
         return int(Path(__file__).stat().st_mtime)
 
     def _get_shows(self) -> Iterable["Database.Item"]:
-        meta: Dict = {}
-        header: List = []
+        meta: Dict[str, Any] = {}
+        header: List[str] = []
         channel, topic, region = '', '', ''
         with self._showlist() as showlist_path:
             with lzma.open(showlist_path, 'rt', encoding='utf-8') as fh:
 
                 logger.debug('Loading database items.')
-                for p in tqdm(json.load(fh, object_pairs_hook=lambda _pairs: _pairs),  # type: ignore
+                for p in tqdm(json.load(fh, object_pairs_hook=lambda _pairs: _pairs),
                               unit='shows',
                               leave=False,
                               disable=HIDE_PROGRESSBAR,
@@ -532,7 +530,7 @@ class Database(object):
                                 'downloaded': None,
                             }
 
-    def initialize_if_old(self, refresh_after):
+    def initialize_if_old(self, refresh_after: int) -> None:
         database_age = now - datetime.fromtimestamp(self.user_version, tz=timezone.utc)
         if database_age > timedelta(hours=refresh_after):
             logger.debug('Database age is %s (too old).', database_age)
@@ -541,7 +539,7 @@ class Database(object):
             logger.debug('Database age is %s.', database_age)
 
     @staticmethod
-    def read_filter_sets(sets_file_path: Path, default_filter):
+    def read_filter_sets(sets_file_path: Optional[Path], default_filter: List[str]) -> Iterator[List[str]]:
         if sets_file_path:
             with sets_file_path.expanduser().open('r+') as set_fh:
                 for line in set_fh:
@@ -553,7 +551,7 @@ class Database(object):
     def filtered(self,
                  rules: List[str],
                  include_future: bool = False,
-                 limit = Optional[int]) -> Iterable["Database.Item"]:
+                 limit: Optional[int] = None) -> Iterator["Database.Item"]:
 
         where = []
         arguments: List[Any] = []
@@ -645,7 +643,7 @@ class Database(object):
         cursor = self.connection.cursor()
         cursor.execute(query, arguments)
         for row in cursor:
-            yield dict(row)
+            yield dict(row)  # type: ignore
 
 
 class History(object):
@@ -665,8 +663,8 @@ class History(object):
         yield db
         db.close()
 
-    @property  # type: ignore
-    def all(self):
+    @property
+    def all(self) -> List[Database.Item]:
         with self.db as db:
             return db.all()
 
@@ -677,15 +675,13 @@ class History(object):
                 historic_download = db.get(row.hash == item['hash'])
                 if historic_download:
                     item['downloaded'] = historic_download['downloaded']
-                else:
-                    item['downloaded'] = False
                 yield item
 
-    def purge(self):
+    def purge(self) -> None:
         with self.db as db:
             return db.purge_tables()
 
-    def remove(self, show_hash):
+    def remove(self, show_hash: str) -> bool:
         row = TinyQuery()
         with self.db as db:
             if db.remove(row.hash == show_hash):
@@ -695,7 +691,7 @@ class History(object):
                 logger.warning('Could not remove %s (not found).', show_hash)
                 return False
 
-    def insert(self, show):
+    def insert(self, show: Database.Item) -> int:
         with self.db as db:
             return db.insert(show)
 
@@ -713,8 +709,8 @@ class Table(object):
                         'region',
                         'downloaded']
 
-    def __init__(self, shows: Iterable[Database.Item], headers: List[str] = None) -> None:
-        self.headers = headers if isinstance(headers, list) else self._default_headers  # type: List
+    def __init__(self, shows: Iterable[Database.Item], headers: Optional[List[str]] = None) -> None:
+        self.headers = headers if isinstance(headers, list) else self._default_headers
         # noinspection PyTypeChecker
         self.data = [[self._escape_cell(t, row.get(t)) for t in self.headers] for row in shows]
 
@@ -725,21 +721,21 @@ class Table(object):
         elif isinstance(obj, datetime):
             return obj.isoformat()
         elif isinstance(obj, timedelta):
-            return re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip()
+            return str(re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip())
         else:
             return str(obj)
 
-    def as_ascii_table(self):
-        return AsciiTable([self.headers] + self.data).table
+    def as_ascii_table(self) -> str:
+        return str(AsciiTable([self.headers] + self.data).table)
 
 
-class Show(dict):
+class Show(Dict[str, Any]):
 
     @property
     def label(self) -> str:
         return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash)s]" % self
 
-    def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Generator[Path, None, None]:
+    def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
 
         file_sizes = []
         with tqdm(unit='B',
@@ -752,7 +748,7 @@ class Show(dict):
 
                 # determine file size for progressbar
                 response = requests.get(url, stream=True, timeout=60)
-                file_sizes.append(int(response.headers.get('content-length', 0)))  # type: ignore
+                file_sizes.append(int(response.headers.get('content-length', 0)))
                 progress_bar.total = sum(file_sizes) / len(file_sizes) * len(target_urls)
 
                 # determine file name and destination
@@ -774,7 +770,7 @@ class Show(dict):
                              target: Path,
                              file_name: str,
                              file_extension: str,
-                             media_type: str):
+                             media_type: str) -> None:
 
         escaped_show_details = {k: escape_path(str(v)) for k, v in self.items()}
         destination_file_path = Path(target.as_posix().format(dir=cwd,
@@ -796,7 +792,7 @@ class Show(dict):
     def _get_m3u8_segments(base_url: str, hls_file_path: Path) -> Generator[Dict[str, Any], None, None]:
 
         with hls_file_path.open('r+') as fh:
-            segment = {}  # type: Dict
+            segment: Dict[str, Any] = {}
             for line in fh:
                 if not line:
                     continue
@@ -877,7 +873,7 @@ class Show(dict):
             "textCyan": "#00FFFF",
             "textWhite": "#FFFFFF"}
 
-        def font_colour(text, colour):
+        def font_colour(text: str, colour: str) -> str:
             return "<font color=\"%s\">%s</font>\n" % (colour_to_rgb[colour], text)
 
         with subtitles_srt_path.open('w') as srt:
@@ -894,7 +890,7 @@ class Show(dict):
 
         return subtitles_srt_path
 
-    def __init__(self, show: Dict[str, Any], **kwargs: Dict) -> None:
+    def __init__(self, show: Database.Item, **kwargs: Dict[str, Any]) -> None:
         super().__init__(show, **kwargs)
 
     def download(self,
@@ -902,7 +898,8 @@ class Show(dict):
                  cwd: Path,
                  target: Path,
                  *,
-                 include_subtitles: bool = True) -> Union[Path, None]:
+                 include_subtitles: bool = True
+                 ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
 
@@ -948,7 +945,7 @@ class Show(dict):
         return None
 
 
-def load_config(arguments: Dict) -> Dict:
+def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
     config_file_path = (Path(arguments['--config']) if arguments['--config'] else DEFAULT_CONFIG_FILE).expanduser()
 
@@ -983,7 +980,7 @@ def load_config(arguments: Dict) -> Dict:
     return arguments
 
 
-def main():
+def main() -> None:
 
     # argument handling
     arguments = docopt.docopt(__doc__.format(cmd=Path(__file__).name,
@@ -995,15 +992,15 @@ def main():
 
     # broken console encoding handling  (http://archive.is/FRcJe#60%)
     if sys.stdout.encoding != 'UTF-8':
-        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')  # type: ignore
     if sys.stderr.encoding != 'UTF-8':
-        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')  # type: ignore
 
     # rfc6266 logger fix (don't expect an upstream fix for that)
     for logging_handler in rfc6266.LOGGER.handlers:
         rfc6266.LOGGER.removeHandler(logging_handler)
 
-    # mute third party modules
+    # mute third party modules              1
     logging.getLogger("requests").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("rfc6266").setLevel(logging.WARNING)
@@ -1038,7 +1035,7 @@ def main():
     cw_dir = Path(arguments['--dir']).expanduser().absolute() if arguments['--dir'] else Path(os.getcwd())
     target_dir = Path(arguments['--target']).expanduser()
     cw_dir.mkdir(parents=True, exist_ok=True)
-    tempfile.tempdir = cw_dir
+    tempfile.tempdir = cw_dir.as_posix()
 
     #  tracking
     history = History(cwd=cw_dir)
