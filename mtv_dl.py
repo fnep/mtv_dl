@@ -178,6 +178,7 @@ from tinydb import TinyDB
 from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
 from tinydb_serialization import Serializer as TinySerializer
 from tqdm import tqdm
+from typing_extensions import Literal
 from typing_extensions import TypedDict
 from yaml.error import YAMLError
 
@@ -729,11 +730,16 @@ class Table(object):
         return str(AsciiTable([self.headers] + self.data).table)
 
 
-class Show(Dict[str, Any]):
+class Downloader:
+
+    Quality = Literal['url_http', 'url_http_hd', 'url_http_small']
+
+    def __init__(self, show: Database.Item):
+        self.show = show
 
     @property
     def label(self) -> str:
-        return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash).11s]" % self
+        return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash).11s]" % self.show
 
     def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
 
@@ -772,12 +778,12 @@ class Show(Dict[str, Any]):
                              file_extension: str,
                              media_type: str) -> None:
 
-        escaped_show_details = {k: escape_path(str(v)) for k, v in self.items()}
+        escaped_show_details = {k: escape_path(str(v)) for k, v in self.show.items()}
         destination_file_path = Path(target.as_posix().format(dir=cwd,
                                                               filename=file_name,
                                                               ext=file_extension,
-                                                              date=self['start'].date().isoformat(),
-                                                              time=self['start'].strftime('%H-%M'),
+                                                              date=self.show['start'].date().isoformat(),
+                                                              time=self.show['start'].strftime('%H-%M'),
                                                               **escaped_show_details))
 
         destination_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -890,11 +896,8 @@ class Show(Dict[str, Any]):
 
         return subtitles_srt_path
 
-    def __init__(self, show: Database.Item, **kwargs: Dict[str, Any]) -> None:
-        super().__init__(show, **kwargs)
-
     def download(self,
-                 quality: Tuple[str, str, str],
+                 quality: Tuple[Quality, Quality, Quality],
                  cwd: Path,
                  target: Path,
                  *,
@@ -904,9 +907,13 @@ class Show(Dict[str, Any]):
         try:
 
             # show url based on quality preference
-            show_url = self["url_http%s" % quality[0]] \
-                       or self["url_http%s" % quality[1]] \
-                       or self["url_http%s" % quality[2]]
+            show_url = self.show[quality[0]] \
+                       or self.show[quality[1]] \
+                       or self.show[quality[2]]
+
+            if not show_url:
+                logger.error('No valid url to download %r', self.label)
+                return None
 
             logger.debug('Downloading %s from %r.', self.label, show_url)
             show_file_path = list(self._download_files(temp_path, [show_url]))[0]
@@ -929,9 +936,9 @@ class Show(Dict[str, Any]):
                 logger.error('File extension %s of %s not supported.', show_file_extension, self.label)
                 return None
 
-            if include_subtitles and self['url_subtitles']:
-                logger.debug('Downloading subtitles for %s from %r.', self.label, self['url_subtitles'])
-                subtitles_xml_path = list(self._download_files(temp_path, [self['url_subtitles']]))[0]
+            if include_subtitles and self.show['url_subtitles']:
+                logger.debug('Downloading subtitles for %s from %r.', self.label, self.show['url_subtitles'])
+                subtitles_xml_path = list(self._download_files(temp_path, [self.show['url_subtitles']]))[0]
                 subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
                 self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, '.srt', 'subtitles')
 
@@ -1072,25 +1079,32 @@ def main() -> None:
 
             elif arguments['download']:
                 for item in shows:
-                    show = Show(item)
-                    if not show.get('downloaded') or arguments['--oblivious']:
+                    downloader = Downloader(item)
+                    if not downloader.show.get('downloaded') or arguments['--oblivious']:
                         if not arguments['--mark-only']:
                             if arguments['--high']:
-                                quality_preference = ('_hd', '', '_small')
+                                quality_preference = (Literal['url_http_hd'],
+                                                      Literal['url_http'],
+                                                      Literal['url_http_small'])
                             elif arguments['--low']:
-                                quality_preference = ('_small', '', '_hd')
+                                quality_preference = (Literal['url_http_small'],
+                                                      Literal['url_http'],
+                                                      Literal['url_http_hd'])
                             else:
-                                quality_preference = ('', '_hd', '_small')
-                            show.download(quality_preference, cw_dir, target_dir,
-                                          include_subtitles=not arguments['--no-subtitles'])
+                                quality_preference = (Literal['url_http'],
+                                                      Literal['url_http_hd'],
+                                                      Literal['url_http_small'])
+                            downloader.download(quality_preference,
+                                                cw_dir, target_dir,
+                                                include_subtitles=not arguments['--no-subtitles'])
                             item['downloaded'] = now
                             history.insert(item)
                         else:
-                            show['downloaded'] = now
-                            history.insert(show)
-                            logger.info('Marked %s from %s as downloaded.', show.label)
+                            downloader.show['downloaded'] = now
+                            history.insert(downloader.show)
+                            logger.info('Marked %s from %s as downloaded.', downloader.label)
                     else:
-                        logger.debug('Skipping %s (already loaded on %s)', show.label, item['downloaded'])
+                        logger.debug('Skipping %s (already loaded on %s)', downloader.label, item['downloaded'])
 
     except ConfigurationError as e:
         logger.error(str(e))
