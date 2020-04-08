@@ -173,10 +173,6 @@ import yaml
 from bs4 import BeautifulSoup
 from pydash import py_
 from terminaltables import AsciiTable
-from tinydb import Query as TinyQuery
-from tinydb import TinyDB
-from tinydb_serialization import SerializationMiddleware as TinySerializationMiddleware
-from tinydb_serialization import Serializer as TinySerializer
 from tqdm import tqdm
 from typing_extensions import Literal
 from typing_extensions import TypedDict
@@ -186,32 +182,6 @@ CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
 DESCRIPTION_THRESHOLD = None
-
-# noinspection SpellCheckingInspection
-FIELDS = {
-    'Beschreibung': 'description',
-    'Datum': 'date',
-    'DatumL': 'start',
-    'Dauer': 'duration',
-    'Geo': 'region',
-    'Größe [MB]': 'size',
-    'Sender': 'channel',
-    'Thema': 'topic',
-    'Titel': 'title',
-    'Url': 'url',
-    'Url HD': 'url_hd', 'Url History': 'url_history',
-    'Url Klein': 'url_small',
-    'Url RTMP': 'url_rtmp',
-    'Url RTMP HD': 'url_rtmp_hd',
-    'Url RTMP Klein': 'url_rtmp_small',
-    'Url Untertitel': 'url_subtitles',
-    'Website': 'website',
-    'Zeit': 'time',
-    'neu': 'new'
-}
-
-FILMLISTE_DATABASE_FILE = '.Filmliste.{script_version}.sqlite'
-
 DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
@@ -229,9 +199,11 @@ CONFIG_OPTIONS = {
     'verbose': bool
 }
 
+HISTORY_DATABASE_FILE = '.History.sqlite'
+FILMLISTE_DATABASE_FILE = '.Filmliste.{script_version}.sqlite'
 
 # see https://res.mediathekview.de/akt.xml
-DATABASE_URLS = [
+FILMLISTE_URLS = [
     "https://liste.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler2.mediathekview.de/Filmliste-akt.xz",
@@ -244,13 +216,8 @@ DATABASE_URLS = [
 
 logger = logging.getLogger('mtv_dl')
 local_zone = tzlocal.get_localzone()
-now = datetime.now(tz=timezone.utc).replace(second=0, microsecond=0)
-
-
-def trim_description(s: str) -> str:
-    if isinstance(DESCRIPTION_THRESHOLD, int) and len(s) > DESCRIPTION_THRESHOLD:
-        return f"{s[:DESCRIPTION_THRESHOLD]}…"
-    return s
+utc_zone = timezone.utc
+now = datetime.now(tz=utc_zone).replace(second=0, microsecond=0)
 
 
 # add timedelta database type
@@ -258,32 +225,14 @@ sqlite3.register_adapter(timedelta, lambda v: v.total_seconds())
 sqlite3.register_converter("timedelta", lambda v: timedelta(seconds=int(v)))
 
 
-# noinspection PyClassHasNoInit
-class DateTimeSerializer(TinySerializer):
-
-    OBJ_CLASS = datetime
-
-    def encode(self, obj: datetime) -> str:
-        return obj.strftime('%Y-%m-%dT%H:%M:%S')
-
-    def decode(self, s: str) -> datetime:
-        return datetime.strptime(s, '%Y-%m-%dT%H:%M:%S')
-
-
-# noinspection PyClassHasNoInit
-class TimedeltaSerializer(TinySerializer):
-
-    OBJ_CLASS = timedelta
-
-    def encode(self, obj: timedelta) -> str:
-        return str(obj.total_seconds())
-
-    def decode(self, s: str) -> timedelta:
-        return timedelta(seconds=float(s))
-
-
 class ConfigurationError(Exception):
     pass
+
+
+def trim_description(s: str) -> str:
+    if isinstance(DESCRIPTION_THRESHOLD, int) and len(s) > DESCRIPTION_THRESHOLD:
+        return f"{s[:DESCRIPTION_THRESHOLD]}…"
+    return s
 
 
 def serialize_for_json(obj: Any) -> str:
@@ -309,6 +258,29 @@ def escape_path(s: str) -> str:
 
 class Database(object):
 
+    # noinspection SpellCheckingInspection
+    TRANSLATION = {
+        'Beschreibung': 'description',
+        'Datum': 'date',
+        'DatumL': 'start',
+        'Dauer': 'duration',
+        'Geo': 'region',
+        'Größe [MB]': 'size',
+        'Sender': 'channel',
+        'Thema': 'topic',
+        'Titel': 'title',
+        'Url': 'url',
+        'Url HD': 'url_hd', 'Url History': 'url_history',
+        'Url Klein': 'url_small',
+        'Url RTMP': 'url_rtmp',
+        'Url RTMP HD': 'url_rtmp_hd',
+        'Url RTMP Klein': 'url_rtmp_small',
+        'Url Untertitel': 'url_subtitles',
+        'Website': 'website',
+        'Zeit': 'time',
+        'neu': 'new'
+    }
+
     class Item(TypedDict):
         hash: str
         channel: str
@@ -328,19 +300,25 @@ class Database(object):
         age: timedelta
         downloaded: Optional[datetime]
 
-    @property
-    def user_version(self) -> int:
+    def database_file(self, schema: str = 'main') -> Path:
         cursor = self.connection.cursor()
-        return int(cursor.execute('PRAGMA user_version;').fetchone()[0])
+        database_index = {db[1]: db[2] for db in cursor.execute("PRAGMA database_list")}
+        if schema in database_index and database_index[schema]:
+            return Path(database_index[schema])
+        else:
+            raise ValueError(f'Database file for {schema!r} not found.')
 
-    def initialize(self) -> None:
+    @property
+    def filmliste_version(self) -> int:
         cursor = self.connection.cursor()
-        cursor.execute("PRAGMA database_list")
-        database_file = cursor.fetchone()[2]
-        logger.debug('Initializing database in %r', database_file)
+        return int(cursor.execute('PRAGMA main.user_version;').fetchone()[0])
+
+    def initialize_filmliste(self) -> None:
+        logger.debug('Initializing Filmliste database in %r.', self.database_file('main'))
+        cursor = self.connection.cursor()
         try:
             cursor.execute("""        
-                CREATE TABlE show (
+                CREATE TABlE main.show (
                     hash TEXT,
                     channel TEXT,
                     description TEXT,
@@ -365,7 +343,7 @@ class Database(object):
 
         # get show data
         cursor.executemany("""
-            INSERT INTO show
+            INSERT INTO main.show
             VALUES (
                 :hash,
                 :channel,
@@ -388,17 +366,51 @@ class Database(object):
 
         self.connection.commit()
 
-    def __init__(self, database: Path) -> None:
-        database_path = database.parent / database.name.format(script_version=self._script_version)
-        logger.debug('Opening database %r', database_path)
-        self.connection = sqlite3.connect(database_path.absolute().as_posix(),
+    @property
+    def history_version(self) -> int:
+        cursor = self.connection.cursor()
+        return int(cursor.execute('PRAGMA history.user_version;').fetchone()[0])
+
+    def initialize_history(self) -> None:
+        logger.info('Initializing History database in %r.', self.database_file('main'))
+        cursor = self.connection.cursor()
+        if self.history_version == 0:
+            cursor.execute("""
+                CREATE TABlE history.downloaded (
+                    hash TEXT,
+                    channel TEXT,
+                    description TEXT,
+                    region TEXT,
+                    size INTEGER,
+                    title TEXT,
+                    topic TEXT,
+                    website TEXT,
+                    start TIMESTAMP,
+                    duration TIMEDELTA,
+                    downloaded TIMESTAMP,
+                    UNIQUE (hash)
+                );
+            """)
+            cursor.execute(f'PRAGMA history.user_version=1')
+
+        self.connection.commit()
+
+    def __init__(self, filmliste: Path, history: Path) -> None:
+        filmliste_path = filmliste.parent / filmliste.name.format(script_version=self._script_version)
+        logger.debug('Opening Filmliste database %r.', filmliste_path)
+        self.connection = sqlite3.connect(filmliste_path.absolute().as_posix(),
                                           detect_types=sqlite3.PARSE_DECLTYPES,
                                           timeout=10)
+        logger.debug('Opening History database %r.', history)
+        self.connection.cursor().execute("ATTACH ? AS history", (history.as_posix(),))
+
         self.connection.row_factory = sqlite3.Row
         self.connection.create_function("REGEXP", 2,
                                         lambda expr, item: re.compile(expr, re.IGNORECASE).search(item) is not None)
-        if self.user_version == 0:
-            self.initialize()
+        if self.filmliste_version == 0:
+            self.initialize_filmliste()
+        if self.history_version == 0:
+            self.initialize_history()
 
     @staticmethod
     def _qualify_url(basis: str, extension: str) -> Union[str, None]:
@@ -433,11 +445,11 @@ class Database(object):
         return h.hexdigest()
 
     @contextmanager
-    def _showlist(self, retries: int = len(DATABASE_URLS)) -> Generator[Path, None, None]:
+    def _showlist(self, retries: int = len(FILMLISTE_URLS)) -> Generator[Path, None, None]:
         while retries:
             retries -= 1
             try:
-                url = random.choice(DATABASE_URLS)
+                url = random.choice(FILMLISTE_URLS)
                 logger.debug('Opening database from %r.', url)
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
@@ -469,8 +481,8 @@ class Database(object):
                 break
 
     @property
-    def _script_version(self) -> float:
-        return int(Path(__file__).stat().st_mtime)
+    def _script_version(self) -> int:
+        return int(os.environ.get('SCRIPT_VERSION', Path(__file__).stat().st_mtime))
 
     def _get_shows(self) -> Iterable["Database.Item"]:
         meta: Dict[str, Any] = {}
@@ -489,7 +501,7 @@ class Database(object):
                     if not meta and p[0] == 'Filmliste':
                         meta = {
                             # p[1][0] is local date, p[1][1] is gmt date
-                            'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=timezone.utc),
+                            'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=utc_zone),
                             'crawler_version': p[1][2],
                             'crawler_agent': p[1][3],
                             'list_id': p[1][4],
@@ -499,7 +511,7 @@ class Database(object):
                         if not header:
                             header = p[1]
                             for i, h in enumerate(header):
-                                header[i] = FIELDS.get(h, h)
+                                header[i] = self.TRANSLATION.get(h, h)
 
                     elif p[0] == 'X':
                         show = dict(zip(header, p[1]))
@@ -509,7 +521,7 @@ class Database(object):
                         if show['start'] and show['url'] and show['size']:
                             title = show['title']
                             size = int(show['size']) if show['size'] else 0
-                            start = datetime.fromtimestamp(int(show['start']), tz=timezone.utc).replace(tzinfo=None)
+                            start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
                             duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                             yield {
                                 'hash': self._show_hash(channel, topic, title, size, start),
@@ -532,12 +544,58 @@ class Database(object):
                             }
 
     def initialize_if_old(self, refresh_after: int) -> None:
-        database_age = now - datetime.fromtimestamp(self.user_version, tz=timezone.utc)
+        database_age = now - datetime.fromtimestamp(self.filmliste_version, tz=utc_zone)
         if database_age > timedelta(hours=refresh_after):
             logger.debug('Database age is %s (too old).', database_age)
-            self.initialize()
+            self.initialize_filmliste()
         else:
             logger.debug('Database age is %s.', database_age)
+
+    def add_to_downloaded(self, show: "Database.Item") -> None:
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            INSERT INTO history.downloaded
+            VALUES(
+                :hash,
+                :channel,
+                :description,
+                :region,
+                :size,
+                :title,
+                :topic,
+                :website,
+                :start,
+                :duration,
+                CURRENT_TIMESTAMP
+            )
+        """, show)
+        self.connection.commit()
+
+    def purge_downloaded(self) -> None:
+        cursor = self.connection.cursor()
+        # noinspection SqlWithoutWhere
+        cursor.execute("DELETE FROM history.downloaded")
+        self.connection.commit()
+
+    def remove_from_downloaded(self, show_hash: str) -> bool:
+        if not len(show_hash) >= 10:
+            logger.warning('Show hash to ambiguous %s.', show_hash)
+            return False
+
+        cursor = self.connection.cursor()
+        cursor.execute("SELECT hash FROM history.downloaded WHERE hash LIKE ?", (show_hash + '%',))
+        found_shows = [r[0] for r in cursor.fetchall()]
+        if not found_shows:
+            logger.warning('Could not remove %s (not found).', show_hash)
+            return False
+        elif len(found_shows) > 1:
+            logger.warning('Could not remove %s (to ambiguous).', show_hash)
+            return False
+        else:
+            cursor.execute("DELETE FROM history.downloaded WHERE hash=?", (found_shows[0],))
+            self.connection.commit()
+            logger.info('Removed %s from history.', show_hash)
+            return True
 
     @staticmethod
     def read_filter_sets(sets_file_path: Optional[Path], default_filter: List[str]) -> Iterator[List[str]]:
@@ -574,13 +632,13 @@ class Database(object):
                     if operator == '=':
                         if field in ('description', 'region', 'size', 'channel',
                                      'topic', 'title', 'hash', 'url_http'):
-                            where.append(f"{field} REGEXP ?")
+                            where.append(f"show.{field} REGEXP ?")
                             arguments.append(str(pattern))
                         elif field in ('duration', 'age'):
-                            where.append(f"{field}=?")
+                            where.append(f"show.{field}=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
                         elif field in ('start',):
-                            where.append(f"{field}=?")
+                            where.append(f"show.{field}=?")
                             arguments.append(iso8601.parse_date(pattern).isoformat())
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
@@ -588,39 +646,39 @@ class Database(object):
                     elif operator == '!=':
                         if field in ('description', 'region', 'size', 'channel',
                                      'topic', 'title', 'hash', 'url_http'):
-                            where.append(f"{field} NOT REGEXP ?")
+                            where.append(f"show.{field} NOT REGEXP ?")
                             arguments.append(str(pattern))
                         elif field in ('duration', 'age'):
-                            where.append(f"{field}!=?")
+                            where.append(f"show.{field}!=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
                         elif field in ('start',):
-                            where.append(f"{field}!=?")
+                            where.append(f"show.{field}!=?")
                             arguments.append(iso8601.parse_date(pattern).isoformat())
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
                     elif operator == '-':
                         if field in ('duration', 'age'):
-                            where.append(f"{field}<=?")
+                            where.append(f"show.{field}<=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
                         elif field == 'size':
-                            where.append(f"{field}<=?")
+                            where.append(f"show.{field}<=?")
                             arguments.append(int(pattern))
                         elif field == 'start':
-                            where.append(f"{field}<=?")
+                            where.append(f"show.{field}<=?")
                             arguments.append(iso8601.parse_date(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
                     elif operator == '+':
                         if field in ('duration', 'age'):
-                            where.append(f"{field}>=?")
+                            where.append(f"show.{field}>=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
                         elif field == 'size':
-                            where.append(f"{field}>=?")
+                            where.append(f"show.{field}>=?")
                             arguments.append(int(pattern))
                         elif field == 'start':
-                            where.append(f"{field}>=?")
+                            where.append(f"show.{field}>=?")
                             arguments.append(iso8601.parse_date(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
@@ -633,9 +691,13 @@ class Database(object):
                                              'Property and filter rule expected separated by an operator.')
 
         if not include_future:
-            where.append("date(start) < date('now')")
+            where.append("date(show.start) < date('now')")
 
-        query = "SELECT * FROM show "
+        query = """
+            SELECT show.*, downloaded.downloaded
+            FROM main.show AS show
+            LEFT JOIN history.downloaded ON main.show.hash = history.downloaded.hash
+        """
         if where:
             query += f"WHERE {' AND '.join(where)} "
         if limit:
@@ -646,55 +708,15 @@ class Database(object):
         for row in cursor:
             yield dict(row)  # type: ignore
 
-
-class History(object):
-
-    def __init__(self, cwd: Path) -> None:
-        self._cwd = cwd
-
-    @property  # type: ignore
-    @contextmanager
-    def db(self) -> TinyDB:
-        history_storage = TinySerializationMiddleware()
-        history_storage.register_serializer(DateTimeSerializer(), 'Datetime')
-        history_storage.register_serializer(TimedeltaSerializer(), 'Timedelta')
-        history_file_path = self._cwd / '.history._db'
-        history_file_path.parent.mkdir(parents=True, exist_ok=True)
-        db = TinyDB(history_file_path, default_table='history', storage=history_storage)
-        yield db
-        db.close()
-
-    @property
-    def all(self) -> List[Database.Item]:
-        with self.db as db:
-            return db.all()
-
-    def check(self, shows: Iterable[Database.Item]) -> Iterable[Database.Item]:
-        row = TinyQuery()
-        with self.db as db:
-            for item in shows:
-                historic_download = db.get(row.hash == item['hash'])
-                if historic_download:
-                    item['downloaded'] = historic_download['downloaded']
-                yield item
-
-    def purge(self) -> None:
-        with self.db as db:
-            return db.purge_tables()
-
-    def remove(self, show_hash: str) -> bool:
-        row = TinyQuery()
-        with self.db as db:
-            if db.remove(row.hash == show_hash):
-                logger.info('Removed %s from history.', show_hash)
-                return True
-            else:
-                logger.warning('Could not remove %s (not found).', show_hash)
-                return False
-
-    def insert(self, show: Database.Item) -> int:
-        with self.db as db:
-            return db.insert(show)
+    def downloaded(self) -> Iterator["Database.Item"]:
+        cursor = self.connection.cursor()
+        cursor.execute("""
+            SELECT *
+            FROM history.downloaded
+            ORDER BY downloaded 
+        """)
+        for row in cursor:
+            yield dict(row)  # type: ignore
 
 
 class Table(object):
@@ -720,7 +742,7 @@ class Table(object):
         if title=='hash':
             return str(obj)[:11]
         elif isinstance(obj, datetime):
-            return obj.isoformat()
+            return obj.replace(tzinfo=utc_zone).astimezone(local_zone).isoformat()
         elif isinstance(obj, timedelta):
             return str(re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip())
         else:
@@ -1044,33 +1066,29 @@ def main() -> None:
     cw_dir.mkdir(parents=True, exist_ok=True)
     tempfile.tempdir = cw_dir.as_posix()
 
-    #  tracking
-    history = History(cwd=cw_dir)
-
     try:
+        showlist = Database(filmliste=cw_dir / FILMLISTE_DATABASE_FILE,
+                            history=cw_dir / HISTORY_DATABASE_FILE)
+        showlist.initialize_if_old(refresh_after=int(arguments['--refresh-after']))
+
         if arguments['history']:
             if arguments['--reset']:
-                history.purge()
+                showlist.purge_downloaded()
             elif arguments['--remove']:
-                history.remove(arguments['--remove'])
+                showlist.remove_from_downloaded(show_hash=arguments['--remove'])
             else:
-                print(Table(sorted(history.all, key=lambda s: s.get('downloaded'))).as_ascii_table())
+                print(Table(sorted(showlist.downloaded())).as_ascii_table())
 
         else:
-            showlist = Database(database=cw_dir / FILMLISTE_DATABASE_FILE)
-            showlist.initialize_if_old(refresh_after=int(arguments['--refresh-after']))
 
             limit = int(arguments['--count']) if arguments['list'] else None
-            shows = history.check(
-                chain(*(showlist.filtered(rules=filter_set,
-                                          include_future=arguments['--include-future'],
-                                          limit=limit or None)
-                        for filter_set
-                        in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
-                                                                     if arguments['--sets'] else None),
-                                                     default_filter=arguments['<filter>'])))
-            )
-
+            shows = chain(*(showlist.filtered(rules=filter_set,
+                                              include_future=arguments['--include-future'],
+                                              limit=limit or None)
+                            for filter_set
+                            in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
+                                                                         if arguments['--sets'] else None),
+                                                         default_filter=arguments['<filter>'])))
             if arguments['list']:
                 print(Table(shows).as_ascii_table())
 
@@ -1083,25 +1101,17 @@ def main() -> None:
                     if not downloader.show.get('downloaded') or arguments['--oblivious']:
                         if not arguments['--mark-only']:
                             if arguments['--high']:
-                                quality_preference = (Literal['url_http_hd'],
-                                                      Literal['url_http'],
-                                                      Literal['url_http_small'])
+                                quality_preference = ('url_http_hd', 'url_http', 'url_http_small')
                             elif arguments['--low']:
-                                quality_preference = (Literal['url_http_small'],
-                                                      Literal['url_http'],
-                                                      Literal['url_http_hd'])
+                                quality_preference = ('url_http_small', 'url_http', 'url_http_hd')
                             else:
-                                quality_preference = (Literal['url_http'],
-                                                      Literal['url_http_hd'],
-                                                      Literal['url_http_small'])
-                            downloader.download(quality_preference,
+                                quality_preference = ('url_http', 'url_http_hd', 'url_http_small')
+                            downloader.download(quality_preference,  # type: ignore
                                                 cw_dir, target_dir,
                                                 include_subtitles=not arguments['--no-subtitles'])
-                            item['downloaded'] = now
-                            history.insert(item)
+                            showlist.add_to_downloaded(item)
                         else:
-                            downloader.show['downloaded'] = now
-                            history.insert(downloader.show)
+                            showlist.add_to_downloaded(downloader.show)
                             logger.info('Marked %s from %s as downloaded.', downloader.label)
                     else:
                         logger.debug('Skipping %s (already loaded on %s)', downloader.label, item['downloaded'])

@@ -1,15 +1,11 @@
 rfc6266
 tzlocal
 iso8601
-pytz
 terminaltables
 docopt
 requests
-tinydb
-tinydb-serialization
 pydash
 tqdm
 durationpy>=0.5
-xxhash
 PyYAML
 beautifulsoup4
