@@ -338,7 +338,7 @@ class Database(object):
                 );
             """)
         except sqlite3.OperationalError:
-            cursor.execute("DELETE TABLE show")
+            cursor.execute("DELETE FROM main.show")
         cursor.execute(f'PRAGMA user_version={int(now.timestamp())}')
 
         # get show data
