@@ -615,7 +615,7 @@ class Database(object):
         where = []
         arguments: List[Any] = []
         if rules:
-            logger.debug('Applying filter: %s', ', '.join(rules))
+            logger.debug('Applying filter: %s (limit: %s)', ', '.join(rules), limit)
 
             for f in rules:
                 match = re.match(r'^(?P<field>\w+)(?P<operator>(?:=|!=|\+|-|\W+))(?P<pattern>.*)$', f)
