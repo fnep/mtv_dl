@@ -155,7 +155,6 @@ from pathlib import Path
 from textwrap import fill as wrap
 from typing import Any
 from typing import Dict
-from typing import Generator
 from typing import Iterable
 from typing import Iterator
 from typing import List
@@ -445,7 +444,7 @@ class Database(object):
         return h.hexdigest()
 
     @contextmanager
-    def _showlist(self, retries: int = len(FILMLISTE_URLS)) -> Generator[Path, None, None]:
+    def _showlist(self, retries: int = len(FILMLISTE_URLS)) -> Iterator[Path]:
         while retries:
             retries -= 1
             try:
@@ -518,7 +517,7 @@ class Database(object):
                         channel = show.get('channel') or channel
                         topic = show.get('topic') or topic
                         region = show.get('region') or region
-                        if show['start'] and show['url'] and show['size']:
+                        if show['start'] and show['url']:
                             title = show['title']
                             size = int(show['size']) if show['size'] else 0
                             start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
@@ -817,9 +816,9 @@ class Downloader:
             logger.info('Saved %s %s to %r.', media_type, self.label, destination_file_path)
 
     @staticmethod
-    def _get_m3u8_segments(base_url: str, hls_file_path: Path) -> Generator[Dict[str, Any], None, None]:
+    def _get_m3u8_segments(base_url: str, m3u8_file_path: Path) -> Iterator[Dict[str, Any]]:
 
-        with hls_file_path.open('r+') as fh:
+        with m3u8_file_path.open('r+') as fh:
             segment: Dict[str, Any] = {}
             for line in fh:
                 if not line:
@@ -841,14 +840,13 @@ class Downloader:
                     segment = {}
 
     def _download_hls_target(self,
+                             m3u8_segments: List[Dict[str, Any]],
                              temp_dir_path: Path,
                              base_url: str,
-                             quality_preference: Tuple[str, str, str],
-                             hls_file_path: Path) -> Path:
+                             quality_preference: Tuple[str, str, str]) -> Path:
 
-        # get the available video streams ordered by quality
         hls_index_segments = py_ \
-            .chain(self._get_m3u8_segments(base_url, hls_file_path)) \
+            .chain(m3u8_segments) \
             .filter(lambda s: 'mp4a' not in s.get('codecs')) \
             .filter(lambda s: s.get('bandwidth')) \
             .sort(key=lambda s: s.get('bandwidth')) \
@@ -871,6 +869,27 @@ class Downloader:
         hls_target_segments = list(self._get_m3u8_segments(base_url, designated_index_file))
         hls_target_files = self._download_files(temp_dir_path, list(s['url'] for s in hls_target_segments))
         logger.debug('%d HLS segments to download.', len(hls_target_segments))
+
+        # download and join the segment files
+        temp_file_path = Path(tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')[1])
+        with temp_file_path.open('wb') as out_fh:
+            for segment_file_path in hls_target_files:
+
+                with segment_file_path.open('rb') as in_fh:
+                    out_fh.write(in_fh.read())
+
+                # delete the segment file immediately to save disk space
+                segment_file_path.unlink()
+
+        return temp_file_path
+
+    def _download_m3u8_target(self,
+                             m3u8_segments: List[Dict[str, Any]],
+                             temp_dir_path: Path) -> Path:
+
+        # get segments
+        hls_target_files = self._download_files(temp_dir_path, list(s['url'] for s in m3u8_segments))
+        logger.debug('%d m3u8 segments to download.', len(m3u8_segments))
 
         # download and join the segment files
         temp_file_path = Path(tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')[1])
@@ -949,9 +968,12 @@ class Downloader:
             if show_file_extension in ('.mp4', '.flv', '.mp3'):
                 self._move_to_user_target(show_file_path, cwd, target, show_file_name, show_file_extension, 'show')
 
-            # TODO: consider to remove hsl/m3u8 downloads ("./mtv_dl.py dump url='[^(mp4|flv|mp3)]$'" is empty)
             elif show_file_extension == '.m3u8':
-                ts_file_path = self._download_hls_target(temp_path, show_url, quality, show_file_path)
+                m3u8_segments = list(self._get_m3u8_segments(show_url, show_file_path))
+                if any('codecs' in s for s in m3u8_segments):
+                    ts_file_path = self._download_hls_target(m3u8_segments, temp_path, show_url, quality)
+                else:
+                    ts_file_path = self._download_m3u8_target(m3u8_segments, temp_path)
                 self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts', 'show')
 
             else:
