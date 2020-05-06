@@ -20,8 +20,6 @@ Options:
   -v, --verbose                         Show more details.
   -q, --quiet                           Hide everything not really needed.
   -b, --no-bar                          Hide the progressbar.
-  --description-width=<cols>            Maximum width (in columns) of the description
-                                        in the progress bar. Default is no limit.
   -l <path>, --logfile=<path>           Log messages to a file instead of stdout.
   -r <hours>, --refresh-after=<hours>   Update database if it is older then the given
                                         number of hours. [default: 3]
@@ -171,8 +169,14 @@ import tzlocal
 import yaml
 from bs4 import BeautifulSoup
 from pydash import py_
-from terminaltables import AsciiTable
-from tqdm import tqdm
+from rich import box
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.progress import BarColumn
+from rich.progress import Progress
+from rich.progress import TextColumn
+from rich.progress import TimeRemainingColumn
+from rich.table import Table
 from typing_extensions import Literal
 from typing_extensions import TypedDict
 from yaml.error import YAMLError
@@ -180,7 +184,6 @@ from yaml.error import YAMLError
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
-DESCRIPTION_THRESHOLD = None
 DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
@@ -206,7 +209,7 @@ FILMLISTE_URLS = [
     "https://liste.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler2.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler3.mediathekview.de/Filmliste-akt.xz"
+    "http://verteiler3.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler4.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler5.mediathekview.de/Filmliste-akt.xz",
     "http://verteiler6.mediathekview.de/Filmliste-akt.xz",
@@ -223,15 +226,25 @@ now = datetime.now(tz=utc_zone).replace(second=0, microsecond=0)
 sqlite3.register_adapter(timedelta, lambda v: v.total_seconds())
 sqlite3.register_converter("timedelta", lambda v: timedelta(seconds=int(v)))
 
+# console handler for tables and progress bars
+console = Console()
+
+
+@contextmanager
+def progress_bar() -> Iterator[Progress]:
+    progress_console = console
+    if HIDE_PROGRESSBAR:
+        progress_console = Console(file=open(os.devnull, 'w'))
+    with Progress(TextColumn("[bold blue]{task.description}", justify="right"),
+                  BarColumn(bar_width=None),
+                  "[progress.percentage]{task.percentage:>3.1f}%",
+                  TimeRemainingColumn(),
+                  console=progress_console) as progress:
+        yield progress
+
 
 class ConfigurationError(Exception):
     pass
-
-
-def trim_description(s: str) -> str:
-    if isinstance(DESCRIPTION_THRESHOLD, int) and len(s) > DESCRIPTION_THRESHOLD:
-        return f"{s[:DESCRIPTION_THRESHOLD]}…"
-    return s
 
 
 def serialize_for_json(obj: Any) -> str:
@@ -455,15 +468,13 @@ class Database(object):
                 total_size = int(response.headers.get('content-length', 0))
                 fd, fname = tempfile.mkstemp(prefix='.tmp', suffix='.xz')
                 try:
-                    with os.fdopen(fd, 'wb', closefd=False) as fh:
-                        with tqdm(total=total_size,
-                                  unit='B',
-                                  unit_scale=True,
-                                  leave=False,
-                                  disable=HIDE_PROGRESSBAR,
-                                  desc=trim_description('Downloading database')) as progress_bar:
+                    with progress_bar() as progress:
+                        with os.fdopen(fd, 'wb', closefd=False) as fh:
+                            bar_id = progress.add_task(
+                                total=total_size,
+                                description='Downloading database')
                             for data in response.iter_content(CHUNK_SIZE):
-                                progress_bar.update(len(data))
+                                progress.update(bar_id, advance=len(data))
                                 fh.write(data)
                     yield Path(fname)
                 finally:
@@ -489,58 +500,58 @@ class Database(object):
         channel, topic, region = '', '', ''
         with self._showlist() as showlist_path:
             with lzma.open(showlist_path, 'rt', encoding='utf-8') as fh:
-
                 logger.debug('Loading database items.')
-                for p in tqdm(json.load(fh, object_pairs_hook=lambda _pairs: _pairs),
-                              unit='shows',
-                              leave=False,
-                              disable=HIDE_PROGRESSBAR,
-                              desc=trim_description('Reading database items')):
-
-                    if not meta and p[0] == 'Filmliste':
-                        meta = {
-                            # p[1][0] is local date, p[1][1] is gmt date
-                            'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=utc_zone),
-                            'crawler_version': p[1][2],
-                            'crawler_agent': p[1][3],
-                            'list_id': p[1][4],
-                        }
-
-                    elif p[0] == 'Filmliste':
-                        if not header:
-                            header = p[1]
-                            for i, h in enumerate(header):
-                                header[i] = self.TRANSLATION.get(h, h)
-
-                    elif p[0] == 'X':
-                        show = dict(zip(header, p[1]))
-                        channel = show.get('channel') or channel
-                        topic = show.get('topic') or topic
-                        region = show.get('region') or region
-                        if show['start'] and show['url']:
-                            title = show['title']
-                            size = int(show['size']) if show['size'] else 0
-                            start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
-                            duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
-                            yield {
-                                'hash': self._show_hash(channel, topic, title, size, start),
-                                'channel': channel,
-                                'description': show['description'],
-                                'region': region,
-                                'size': size,
-                                'title': title,
-                                'topic': topic,
-                                'website': show['website'],
-                                'new': show['new'] == 'true',
-                                'url_http': str(show['url']) or None,
-                                'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
-                                'url_http_small': self._qualify_url(show['url'], show['url_small']),
-                                'url_subtitles': show['url_subtitles'],
-                                'start': start,
-                                'duration': duration,
-                                'age': now.replace(tzinfo=None)-start,
-                                'downloaded': None,
+                data = json.load(fh, object_pairs_hook=lambda _pairs: _pairs)
+                with progress_bar() as progress:
+                    bar_id = progress.add_task(
+                        total=len(data),
+                        description='Reading database items')
+                    for p in data:
+                        progress.update(bar_id, advance=1)
+                        if not meta and p[0] == 'Filmliste':
+                            meta = {
+                                # p[1][0] is local date, p[1][1] is gmt date
+                                'date': datetime.strptime(p[1][1], '%d.%m.%Y, %H:%M').replace(tzinfo=utc_zone),
+                                'crawler_version': p[1][2],
+                                'crawler_agent': p[1][3],
+                                'list_id': p[1][4],
                             }
+
+                        elif p[0] == 'Filmliste':
+                            if not header:
+                                header = p[1]
+                                for i, h in enumerate(header):
+                                    header[i] = self.TRANSLATION.get(h, h)
+
+                        elif p[0] == 'X':
+                            show = dict(zip(header, p[1]))
+                            channel = show.get('channel') or channel
+                            topic = show.get('topic') or topic
+                            region = show.get('region') or region
+                            if show['start'] and show['url']:
+                                title = show['title']
+                                size = int(show['size']) if show['size'] else 0
+                                start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
+                                duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
+                                yield {
+                                    'hash': self._show_hash(channel, topic, title, size, start),
+                                    'channel': channel,
+                                    'description': show['description'],
+                                    'region': region,
+                                    'size': size,
+                                    'title': title,
+                                    'topic': topic,
+                                    'website': show['website'],
+                                    'new': show['new'] == 'true',
+                                    'url_http': str(show['url']) or None,
+                                    'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
+                                    'url_http_small': self._qualify_url(show['url'], show['url_small']),
+                                    'url_subtitles': show['url_subtitles'],
+                                    'start': start,
+                                    'duration': duration,
+                                    'age': now.replace(tzinfo=None)-start,
+                                    'downloaded': None,
+                                }
 
     def initialize_if_old(self, refresh_after: int) -> None:
         database_age = now - datetime.fromtimestamp(self.filmliste_version, tz=utc_zone)
@@ -718,27 +729,10 @@ class Database(object):
             yield dict(row)  # type: ignore
 
 
-class Table(object):
+def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = None) -> None:
 
-    _default_headers = ['hash',
-                        'channel',
-                        'title',
-                        'topic',
-                        'size',
-                        'start',
-                        'duration',
-                        'age',
-                        'region',
-                        'downloaded']
-
-    def __init__(self, shows: Iterable[Database.Item], headers: Optional[List[str]] = None) -> None:
-        self.headers = headers if isinstance(headers, list) else self._default_headers
-        # noinspection PyTypeChecker
-        self.data = [[self._escape_cell(t, row.get(t)) for t in self.headers] for row in shows]
-
-    @staticmethod
     def _escape_cell(title: str, obj: Any) -> str:
-        if title=='hash':
+        if title == 'hash':
             return str(obj)[:11]
         elif isinstance(obj, datetime):
             return obj.replace(tzinfo=utc_zone).astimezone(local_zone).isoformat()
@@ -747,8 +741,25 @@ class Table(object):
         else:
             return str(obj)
 
-    def as_ascii_table(self) -> str:
-        return str(AsciiTable([self.headers] + self.data).table)
+    headers = headers if isinstance(headers, list) else [
+        'hash',
+        'channel',
+        'title',
+        'topic',
+        'size',
+        'start',
+        'duration',
+        'age',
+        'region',
+        'downloaded']
+
+    # noinspection PyTypeChecker
+    table = Table(box=box.MINIMAL_DOUBLE_HEAD)
+    for h in headers:
+        table.add_column(h)
+    for row in shows:
+        table.add_row(*[_escape_cell(t, row.get(t)) for t in headers])
+    console.print(table)
 
 
 class Downloader:
@@ -760,23 +771,21 @@ class Downloader:
 
     @property
     def label(self) -> str:
-        return "%(title)r [%(channel)s, %(topic)r, %(start)s, %(hash).11s]" % self.show
+        return "%(title)r (%(channel)s, %(topic)r, %(start)s, %(hash).11s)" % self.show
 
     def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
 
         file_sizes = []
-        with tqdm(unit='B',
-                  unit_scale=True,
-                  leave=False,
-                  disable=HIDE_PROGRESSBAR,
-                  desc=trim_description(f'Downloading {self.label}')) as progress_bar:
+        with progress_bar() as progress:
+            bar_id = progress.add_task(
+                description=f'Downloading {self.label}')
 
             for url in target_urls:
 
                 # determine file size for progressbar
                 response = requests.get(url, stream=True, timeout=60)
                 file_sizes.append(int(response.headers.get('content-length', 0)))
-                progress_bar.total = sum(file_sizes) / len(file_sizes) * len(target_urls)
+                progress.update(bar_id, total=sum(file_sizes) / len(file_sizes) * len(target_urls))
 
                 # determine file name and destination
                 default_filename = os.path.basename(url)
@@ -786,7 +795,7 @@ class Downloader:
                 # actual download
                 with destination_file_path.open('wb') as fh:
                     for data in response.iter_content(CHUNK_SIZE):
-                        progress_bar.update(len(data))
+                        progress.update(bar_id, advance=len(data))
                         fh.write(data)
 
                 yield destination_file_path
@@ -883,9 +892,7 @@ class Downloader:
 
         return temp_file_path
 
-    def _download_m3u8_target(self,
-                             m3u8_segments: List[Dict[str, Any]],
-                             temp_dir_path: Path) -> Path:
+    def _download_m3u8_target(self, m3u8_segments: List[Dict[str, Any]], temp_dir_path: Path) -> Path:
 
         # get segments
         hls_target_files = self._download_files(temp_dir_path, list(s['url'] for s in m3u8_segments))
@@ -1059,10 +1066,13 @@ def main() -> None:
     # ISO8601 logger
     if arguments['--logfile']:
         logging_handler = logging.FileHandler(Path(arguments['--logfile']).expanduser())
+        logging_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
+                                                       "%Y-%m-%dT%H:%M:%S%z"))
     else:
-        logging_handler = logging.StreamHandler()
+        logging_handler = RichHandler(console=console)
+        logging_handler.setFormatter(logging.Formatter(datefmt="%Y-%m-%dT%H:%M:%S%z "))
+        logging_handler._log_render.show_path = False
 
-    logging_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(message)s", "%Y-%m-%dT%H:%M:%S%z"))
     logger.addHandler(logging_handler)
     sys.excepthook = lambda _c, _e, _t: logger.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
 
@@ -1071,9 +1081,7 @@ def main() -> None:
 
     # progressbar handling
     global HIDE_PROGRESSBAR
-    global DESCRIPTION_THRESHOLD
     HIDE_PROGRESSBAR = bool(arguments['--logfile']) or bool(arguments['--no-bar']) or arguments['--quiet']
-    DESCRIPTION_THRESHOLD = int(arguments['--description-width']) if arguments['--description-width'] else None
 
     if arguments['--verbose']:
         logger.setLevel(logging.DEBUG)
@@ -1099,7 +1107,7 @@ def main() -> None:
             elif arguments['--remove']:
                 showlist.remove_from_downloaded(show_hash=arguments['--remove'])
             else:
-                print(Table(sorted(showlist.downloaded())).as_ascii_table())
+                show_table(sorted(showlist.downloaded()))
 
         else:
 
@@ -1112,7 +1120,7 @@ def main() -> None:
                                                                          if arguments['--sets'] else None),
                                                          default_filter=arguments['<filter>'])))
             if arguments['list']:
-                print(Table(shows).as_ascii_table())
+                show_table(shows)
 
             elif arguments['dump']:
                 print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))

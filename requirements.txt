@@ -1,11 +1,10 @@
 rfc6266
 tzlocal
 iso8601
-terminaltables
 docopt
 requests
 pydash
-tqdm
+rich
 durationpy>=0.5
 PyYAML
 beautifulsoup4
