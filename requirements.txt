@@ -2,7 +2,6 @@ rfc6266
 tzlocal
 iso8601
 docopt
-requests
 pydash
 rich
 durationpy>=0.5

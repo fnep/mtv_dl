@@ -129,6 +129,7 @@ Config file:
 
 import codecs
 import hashlib
+import http.client
 import json
 import logging
 import lzma
@@ -143,11 +144,14 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.error
 import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from io import BytesIO
 from itertools import chain
 from pathlib import Path
 from textwrap import fill as wrap
@@ -163,7 +167,6 @@ from typing import Union
 import docopt
 import durationpy
 import iso8601
-import requests
 import rfc6266
 import tzlocal
 import yaml
@@ -188,7 +191,6 @@ DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
     'dir': str,
-    'description-width': int,
     'high': bool,
     'include-future': bool,
     'logfile': str,
@@ -239,11 +241,15 @@ def progress_bar() -> Iterator[Progress]:
                   BarColumn(bar_width=None),
                   "[progress.percentage]{task.percentage:>3.1f}%",
                   TimeRemainingColumn(),
+                  refresh_per_second=4,
                   console=progress_console) as progress:
         yield progress
 
 
 class ConfigurationError(Exception):
+    pass
+
+class RetryLimitExceeded(Exception):
     pass
 
 
@@ -457,35 +463,34 @@ class Database(object):
         return h.hexdigest()
 
     @contextmanager
-    def _showlist(self, retries: int = len(FILMLISTE_URLS)) -> Iterator[Path]:
+    def _showlist(self, retries: int = len(FILMLISTE_URLS)) -> Iterator[BytesIO]:
         while retries:
             retries -= 1
             try:
                 url = random.choice(FILMLISTE_URLS)
                 logger.debug('Opening database from %r.', url)
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                fd, fname = tempfile.mkstemp(prefix='.tmp', suffix='.xz')
-                try:
+                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=9)
+                total_size = int(response.getheader('content-length') or 0)
+                with BytesIO() as buffer:
                     with progress_bar() as progress:
-                        with os.fdopen(fd, 'wb', closefd=False) as fh:
-                            bar_id = progress.add_task(
-                                total=total_size,
-                                description='Downloading database')
-                            for data in response.iter_content(CHUNK_SIZE):
+                        bar_id = progress.add_task(
+                            total=total_size,
+                            description='Downloading database')
+                        while True:
+                            data = response.read(CHUNK_SIZE)
+                            if not data:
+                                break
+                            else:
                                 progress.update(bar_id, advance=len(data))
-                                fh.write(data)
-                    yield Path(fname)
-                finally:
-                    os.close(fd)
-                    os.remove(fname)
-            except requests.exceptions.HTTPError as e:
+                                buffer.write(data)
+                    buffer.seek(0)
+                    yield buffer
+            except urllib.error.HTTPError as e:
                 if retries:
                     logger.debug('Database download failed (%d more retries): %s' % (retries, e))
                 else:
                     logger.error('Database download failed (no more retries): %s' % e)
-                    raise requests.exceptions.HTTPError('retry limit reached, giving up')
+                    raise RetryLimitExceeded('retry limit reached, giving up')
                 time.sleep(5)
             else:
                 break
@@ -498,8 +503,8 @@ class Database(object):
         meta: Dict[str, Any] = {}
         header: List[str] = []
         channel, topic, region = '', '', ''
-        with self._showlist() as showlist_path:
-            with lzma.open(showlist_path, 'rt', encoding='utf-8') as fh:
+        with self._showlist() as showlist_archive:
+            with lzma.open(showlist_archive, 'rt', encoding='utf-8') as fh:
                 logger.debug('Loading database items.')
                 data = json.load(fh, object_pairs_hook=lambda _pairs: _pairs)
                 with progress_bar() as progress:
@@ -782,21 +787,28 @@ class Downloader:
 
             for url in target_urls:
 
+                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=60)
+
                 # determine file size for progressbar
-                response = requests.get(url, stream=True, timeout=60)
-                file_sizes.append(int(response.headers.get('content-length', 0)))
+                file_sizes.append(int(response.getheader('content-length') or 0))
                 progress.update(bar_id, total=sum(file_sizes) / len(file_sizes) * len(target_urls))
 
                 # determine file name and destination
                 default_filename = os.path.basename(url)
-                file_name = rfc6266.parse_requests_response(response).filename_unsafe or default_filename
+                file_name = rfc6266.parse_headers(
+                    content_disposition=response.getheader('content-disposition'),
+                    location=response.getheader('content-location')).filename_unsafe or default_filename
                 destination_file_path = destination_dir_path / file_name
 
                 # actual download
                 with destination_file_path.open('wb') as fh:
-                    for data in response.iter_content(CHUNK_SIZE):
-                        progress.update(bar_id, advance=len(data))
-                        fh.write(data)
+                    while True:
+                        data = response.read(CHUNK_SIZE)
+                        if not data:
+                            break
+                        else:
+                            progress.update(bar_id, advance=len(data))
+                            fh.write(data)
 
                 yield destination_file_path
 
@@ -995,7 +1007,7 @@ class Downloader:
 
             return show_file_path
 
-        except (requests.exceptions.RequestException, OSError) as e:
+        except (urllib.error.HTTPError, OSError) as e:
             logger.error('Download of %s failed: %s', self.label, e)
         finally:
             shutil.rmtree(temp_path)
@@ -1059,7 +1071,6 @@ def main() -> None:
         rfc6266.LOGGER.removeHandler(logging_handler)
 
     # mute third party modules              1
-    logging.getLogger("requests").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("rfc6266").setLevel(logging.WARNING)
 
