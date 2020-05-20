@@ -792,9 +792,7 @@ class Downloader:
 
                 # determine file size for progressbar
                 file_sizes.append(int(response.getheader('content-length') or 0))
-                total_size = sum(file_sizes) / len(file_sizes) * len(target_urls)
-                if total_size:
-                    progress.update(bar_id, total=total_size)
+                progress.update(bar_id, total=sum(file_sizes) / len(file_sizes) * len(target_urls))
 
                 # determine file name and destination
                 default_filename = os.path.basename(url)
