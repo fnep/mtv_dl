@@ -134,7 +134,6 @@ import json
 import logging
 import lzma
 import os
-import platform
 import random
 import re
 import shlex
@@ -206,6 +205,9 @@ CONFIG_OPTIONS = {
 HISTORY_DATABASE_FILE = '.History.sqlite'
 FILMLISTE_DATABASE_FILE = '.Filmliste.{script_version}.sqlite'
 
+# regex to find characters not allowed in file names
+INVALID_FILENAME_CHARACTERS = re.compile("[{}]".format(re.escape('<>:"/\\|?*' + "".join(chr(i) for i in range(32)))))
+
 # see https://res.mediathekview.de/akt.xml
 FILMLISTE_URLS = [
     "https://liste.mediathekview.de/Filmliste-akt.xz",
@@ -262,16 +264,8 @@ def serialize_for_json(obj: Any) -> str:
         raise TypeError('%r is not JSON serializable' % obj)
 
 
-if platform.system() == 'Windows':
-    INVALID_CHARS = '<>:"/\\|?*' + "".join(chr(i) for i in range(32))
-else:
-    INVALID_CHARS = '/\0'
-
-invalidre = re.compile("[{}]".format(re.escape(INVALID_CHARS)))
-
-
 def escape_path(s: str) -> str:
-    return invalidre.sub("_", s)
+    return INVALID_FILENAME_CHARACTERS.sub("_", s)
 
 
 class Database(object):
