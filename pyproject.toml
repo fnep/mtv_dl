@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mtv_dl"
-version = "0.13"
+version = "0.14"
 description = "MediathekView Downloader"
 readme = "DESCRIPTION.rst"
 authors = ["Frank Epperlein <frank+mtv_dl@epperle.in>"]

@@ -209,16 +209,8 @@ FILMLISTE_DATABASE_FILE = '.Filmliste.{script_version}.sqlite'
 INVALID_FILENAME_CHARACTERS = re.compile("[{}]".format(re.escape('<>:"/\\|?*' + "".join(chr(i) for i in range(32)))))
 
 # see https://res.mediathekview.de/akt.xml
-FILMLISTE_URLS = [
-    "https://liste.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler1.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler2.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler3.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler4.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler5.mediathekview.de/Filmliste-akt.xz",
-    "http://verteiler6.mediathekview.de/Filmliste-akt.xz",
-    "http://download10.onlinetvrecorder.com/mediathekview/Filmliste-akt.xz",
-]
+# and https://forum.mediathekview.de/topic/3508/aktuelle-verteiler-und-filmlisten-server
+FILMLISTE_URL = "https://liste.mediathekview.de/Filmliste-akt.xz"
 
 logger = logging.getLogger('mtv_dl')
 local_zone = tzlocal.get_localzone()
@@ -458,13 +450,12 @@ class Database(object):
         return h.hexdigest()
 
     @contextmanager
-    def _showlist(self, retries: int = len(FILMLISTE_URLS)) -> Iterator[BytesIO]:
+    def _showlist(self, retries: int = 3) -> Iterator[BytesIO]:
         while retries:
             retries -= 1
             try:
-                url = random.choice(FILMLISTE_URLS)
-                logger.debug('Opening database from %r.', url)
-                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=9)
+                logger.debug('Opening database from %r.', FILMLISTE_URL)
+                response: http.client.HTTPResponse = urllib.request.urlopen(FILMLISTE_URL, timeout=9)
                 total_size = int(response.getheader('content-length') or 0)
                 with BytesIO() as buffer:
                     with progress_bar() as progress:
@@ -486,7 +477,7 @@ class Database(object):
                 else:
                     logger.error('Database download failed (no more retries): %s' % e)
                     raise RetryLimitExceeded('retry limit reached, giving up')
-                time.sleep(5)
+                time.sleep(10)
             else:
                 break
 
