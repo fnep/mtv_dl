@@ -1,7 +1,8 @@
 *.py[cod]
 .idea
-/.history.db
+/.History.sqlite
 /.Filmliste-akt.xz.cache
+/.Filmliste.*.sqlite
 /.mypy_cache
 /dist
 /MANIFEST
