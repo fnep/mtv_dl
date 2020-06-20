@@ -50,6 +50,7 @@ Download options:
                                         in the history. This is to initialize a new filter
                                         if upcoming shows are wanted.
   --no-subtitles                        Do not try to download subtitles.
+  --no-nfo                              Do not nfo files.
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
@@ -162,6 +163,7 @@ from typing import List
 from typing import Optional
 from typing import Tuple
 from typing import Union
+from xml.etree import ElementTree as ET
 
 import docopt
 import durationpy
@@ -274,7 +276,8 @@ class Database(object):
         'Thema': 'topic',
         'Titel': 'title',
         'Url': 'url',
-        'Url HD': 'url_hd', 'Url History': 'url_history',
+        'Url HD': 'url_hd',
+        'Url History': 'url_history',
         'Url Klein': 'url_small',
         'Url RTMP': 'url_rtmp',
         'Url RTMP HD': 'url_rtmp_hd',
@@ -947,7 +950,8 @@ class Downloader:
                  cwd: Path,
                  target: Path,
                  *,
-                 include_subtitles: bool = True
+                 include_subtitles: bool = True,
+                 include_nfo: bool = True
                  ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
@@ -990,6 +994,22 @@ class Downloader:
                 subtitles_xml_path = list(self._download_files(temp_path, [self.show['url_subtitles']]))[0]
                 subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
                 self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, '.srt', 'subtitles')
+
+            if include_nfo:
+                nfo_movie = ET.fromstring('<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><movie/>')
+                nfo_id = ET.SubElement(nfo_movie, 'uniqueid')
+                nfo_id.set('type', 'hash')
+                nfo_id.text = self.show['hash']
+                ET.SubElement(nfo_movie, 'title').text = self.show['title']
+                ET.SubElement(nfo_movie, 'tagline').text = self.show['topic']
+                ET.SubElement(nfo_movie, 'plot').text = self.show['description']
+                ET.SubElement(nfo_movie, 'studio').text = self.show['channel']
+                if self.show['start']:
+                    ET.SubElement(nfo_movie, 'aired').text = self.show['start'].isoformat()
+                ET.SubElement(nfo_movie, 'country').text = self.show['region']
+                nfo_path = Path(tempfile.mkstemp(dir=temp_path, prefix='.tmp')[1])
+                ET.ElementTree(nfo_movie).write(nfo_path, xml_declaration=True)
+                self._move_to_user_target(nfo_path, cwd, target, show_file_name, '.nfo', 'nfo')
 
             return show_file_path
 
@@ -1135,7 +1155,8 @@ def main() -> None:
                                 quality_preference = ('url_http', 'url_http_hd', 'url_http_small')
                             downloader.download(quality_preference,  # type: ignore
                                                 cw_dir, target_dir,
-                                                include_subtitles=not arguments['--no-subtitles'])
+                                                include_subtitles=not arguments['--no-subtitles'],
+                                                include_nfo=not arguments['--no-nfo'])
                             showlist.add_to_downloaded(item)
                         else:
                             showlist.add_to_downloaded(downloader.show)
