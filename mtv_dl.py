@@ -1008,7 +1008,8 @@ class Downloader:
                     ET.SubElement(nfo_movie, 'aired').text = self.show['start'].isoformat()
                 ET.SubElement(nfo_movie, 'country').text = self.show['region']
                 nfo_path = Path(tempfile.mkstemp(dir=temp_path, prefix='.tmp')[1])
-                ET.ElementTree(nfo_movie).write(nfo_path, xml_declaration=True)
+                ET.ElementTree(nfo_movie).write(nfo_path, xml_declaration=True, encoding="UTF-8")
+                os.chmod(nfo_path, 0o644)
                 self._move_to_user_target(nfo_path, cwd, target, show_file_name, '.nfo', 'nfo')
 
             return show_file_path
