@@ -1081,6 +1081,9 @@ def main() -> None:
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("rfc6266").setLevel(logging.WARNING)
 
+    # config handling
+    arguments = load_config(arguments)
+
     # ISO8601 logger
     if arguments['--logfile']:
         logging_handler = logging.FileHandler(Path(arguments['--logfile']).expanduser())
@@ -1093,9 +1096,6 @@ def main() -> None:
 
     logger.addHandler(logging_handler)
     sys.excepthook = lambda _c, _e, _t: logger.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
-
-    # config handling
-    arguments = load_config(arguments)
 
     # progressbar handling
     global HIDE_PROGRESSBAR
