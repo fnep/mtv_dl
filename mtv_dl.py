@@ -636,6 +636,10 @@ class Database(object):
                         'url': 'url_http'
                     }.get(field, field)
 
+                    if field not in ('description', 'region', 'size', 'channel',
+                                     'topic', 'title', 'hash', 'url_http', 'duration', 'age', 'start'):
+                        raise ConfigurationError('Invalid field %r.' % (field,))
+
                     if operator == '=':
                         if field in ('description', 'region', 'size', 'channel',
                                      'topic', 'title', 'hash', 'url_http'):
