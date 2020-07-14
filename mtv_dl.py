@@ -1161,7 +1161,7 @@ def main() -> None:
                             showlist.add_to_downloaded(item)
                         else:
                             showlist.add_to_downloaded(downloader.show)
-                            logger.info('Marked %s from %s as downloaded.', downloader.label)
+                            logger.info('Marked %s as downloaded.', downloader.label)
                     else:
                         logger.debug('Skipping %s (already loaded on %s)', downloader.label, item['downloaded'])
 
