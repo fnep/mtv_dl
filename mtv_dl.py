@@ -557,22 +557,25 @@ class Database(object):
 
     def add_to_downloaded(self, show: "Database.Item") -> None:
         cursor = self.connection.cursor()
-        cursor.execute("""
-            INSERT INTO history.downloaded
-            VALUES(
-                :hash,
-                :channel,
-                :description,
-                :region,
-                :size,
-                :title,
-                :topic,
-                :website,
-                :start,
-                :duration,
-                CURRENT_TIMESTAMP
-            )
-        """, show)
+        try:
+            cursor.execute("""
+                INSERT INTO history.downloaded
+                VALUES(
+                    :hash,
+                    :channel,
+                    :description,
+                    :region,
+                    :size,
+                    :title,
+                    :topic,
+                    :website,
+                    :start,
+                    :duration,
+                    CURRENT_TIMESTAMP
+                )
+            """, show)
+        except sqlite3.IntegrityError:
+            pass
         self.connection.commit()
 
     def purge_downloaded(self) -> None:
