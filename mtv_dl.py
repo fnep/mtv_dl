@@ -814,7 +814,7 @@ class Downloader:
                              target: Path,
                              file_name: str,
                              file_extension: str,
-                             media_type: str) -> None:
+                             media_type: str) -> bool:
 
         escaped_show_details = {k: escape_path(str(v)) for k, v in self.show.items()}
         destination_file_path = Path(target.as_posix().format(dir=cwd,
@@ -831,6 +831,9 @@ class Downloader:
             logger.warning('Skipped %s. Moving %r to %r failed: %s', self.label, source_path, destination_file_path, e)
         else:
             logger.info('Saved %s %s to %r.', media_type, self.label, destination_file_path)
+            return True
+
+        return False
 
     @staticmethod
     def _get_m3u8_segments(base_url: str, m3u8_file_path: Path) -> Iterator[Dict[str, Any]]:
@@ -982,7 +985,9 @@ class Downloader:
                 show_file_extension = ''
 
             if show_file_extension in ('.mp4', '.flv', '.mp3'):
-                self._move_to_user_target(show_file_path, cwd, target, show_file_name, show_file_extension, 'show')
+                if not self._move_to_user_target(show_file_path, cwd, target,
+                                                 show_file_name, show_file_extension, 'show'):
+                    return None
 
             elif show_file_extension == '.m3u8':
                 m3u8_segments = list(self._get_m3u8_segments(show_url, show_file_path))
@@ -990,7 +995,8 @@ class Downloader:
                     ts_file_path = self._download_hls_target(m3u8_segments, temp_path, show_url, quality)
                 else:
                     ts_file_path = self._download_m3u8_target(m3u8_segments, temp_path)
-                self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts', 'show')
+                if not self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts', 'show'):
+                    return None
 
             else:
                 logger.error('File extension %s of %s not supported.', show_file_extension, self.label)
@@ -1161,11 +1167,11 @@ def main() -> None:
                                 quality_preference = ('url_http_small', 'url_http', 'url_http_hd')
                             else:
                                 quality_preference = ('url_http', 'url_http_hd', 'url_http_small')
-                            downloader.download(quality_preference,  # type: ignore
-                                                cw_dir, target_dir,
-                                                include_subtitles=not arguments['--no-subtitles'],
-                                                include_nfo=not arguments['--no-nfo'])
-                            showlist.add_to_downloaded(item)
+                            if downloader.download(quality_preference,  # type: ignore
+                                                   cw_dir, target_dir,
+                                                   include_subtitles=not arguments['--no-subtitles'],
+                                                   include_nfo=not arguments['--no-nfo']):
+                                showlist.add_to_downloaded(item)
                         else:
                             showlist.add_to_downloaded(downloader.show)
                             logger.info('Marked %s as downloaded.', downloader.label)
