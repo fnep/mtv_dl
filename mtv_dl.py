@@ -38,7 +38,7 @@ History options:
 Download options:
   -h, --high                            Download best available version.
   -l, --low                             Download the smallest available version.
-  -o, --oblivious                       Download even if the show alredy is marked as downloaded.
+  -o, --oblivious                       Download even if the show already is marked as downloaded.
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
                                         the parameters {{dir}} (from the option --dir),
                                         {{filename}} (from server filename) and {{ext}} (file
@@ -85,7 +85,7 @@ Filters:
     - topic='extra 3'                   (topic contains 'extra 3')
     - title!=spezial                    (title not contains 'spezial')
     - channel=ARD                       (channel contains ARD)
-    - age-1mm                           (age is older then 1 month)
+    - age-1mm                           (age is younger then 1 month)
     - duration+20m                      (duration longer then 20 min)
     - start+2017-07-01                  (show started after 2017-07-01)
     - start-2017-07-05T23:00:00+02:00   (show started before 2017-07-05, 23:00 CEST)
