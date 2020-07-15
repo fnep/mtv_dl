@@ -711,6 +711,7 @@ class Database(object):
         """
         if where:
             query += f"WHERE {' AND '.join(where)} "
+        query += "ORDER BY show.start "
         if limit:
             query += f"LIMIT {limit} "
 
