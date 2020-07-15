@@ -65,21 +65,21 @@ Filters:
   The following operators and fields are available:
 
    '='  Pattern is a search within the field value. It's a case insensitive regular expression
-        for the fields 'description', 'start', 'region', 'size', 'channel', 'topic', 'title',
-        'hash' and 'url'. For the fields 'duration' and 'age' it's a basic equality
-        comparison.
+        for the fields 'description', 'start', 'dow' (day of the week), 'hour', 'minute',
+        'region', 'size', 'channel', 'topic', 'title', 'hash' and 'url'. For the fields
+        'duration' and 'age' it's a basic equality comparison.
 
    '!=' Inverse of the '=' operator.
 
    '+'  Pattern must be greater then the field value. Available for the fields 'duration',
-        'age', 'start' and 'size'.
+        'age', 'start', 'dow' (day of the week), 'hour', 'minute', and 'size'.
 
    '-'  Pattern must be less then the field value. Available for the same fields as for
         the '+' operator.
 
   Pattern should be given in the same format as shown in the list command. Times (for
   'start'), time deltas (for 'duration', 'age') and numbers ('size') are parsed and
-  smart compared.
+  smart compared. Day of the week ('dow') is 0-6 with Sunday=0.
 
   Examples:
     - topic='extra 3'                   (topic contains 'extra 3')
@@ -89,6 +89,7 @@ Filters:
     - duration+20m                      (duration longer then 20 min)
     - start+2017-07-01                  (show started after 2017-07-01)
     - start-2017-07-05T23:00:00+02:00   (show started before 2017-07-05, 23:00 CEST)
+    - topic=Tatort dow=0 hour=20        (sunday night Tatort)
 
   As many filters as needed may be given as separated arguments (separated  with space).
   For a show to get considered, _all_ given filter criteria must met.
@@ -135,7 +136,6 @@ import json
 import logging
 import lzma
 import os
-import random
 import re
 import shlex
 import shutil
@@ -636,8 +636,17 @@ class Database(object):
                         'url': 'url_http'
                     }.get(field, field)
 
+                    if field == 'hour':
+                        # translate hour to utc
+                        pattern = (now
+                                   .replace(hour=int(pattern))
+                                   .replace(tzinfo=local_zone)
+                                   .astimezone(utc_zone)
+                                   .hour)
+
                     if field not in ('description', 'region', 'size', 'channel',
-                                     'topic', 'title', 'hash', 'url_http', 'duration', 'age', 'start'):
+                                     'topic', 'title', 'hash', 'url_http', 'duration', 'age', 'start',
+                                     'dow', 'hour', 'minute'):
                         raise ConfigurationError('Invalid field %r.' % (field,))
 
                     if operator == '=':
@@ -651,6 +660,15 @@ class Database(object):
                         elif field in ('start',):
                             where.append(f"show.{field}=?")
                             arguments.append(iso8601.parse_date(pattern).isoformat())
+                        elif field in ('dow'):
+                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)=?")
+                            arguments.append(int(pattern))
+                        elif field in ('hour'):
+                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)=?")
+                            arguments.append(int(pattern))
+                        elif field in ('minute'):
+                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)=?")
+                            arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
@@ -665,6 +683,15 @@ class Database(object):
                         elif field in ('start',):
                             where.append(f"show.{field}!=?")
                             arguments.append(iso8601.parse_date(pattern).isoformat())
+                        elif field in ('dow'):
+                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)!=?")
+                            arguments.append(int(pattern))
+                        elif field in ('hour'):
+                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)!=?")
+                            arguments.append(int(pattern))
+                        elif field in ('minute'):
+                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)!=?")
+                            arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
@@ -672,12 +699,21 @@ class Database(object):
                         if field in ('duration', 'age'):
                             where.append(f"show.{field}<=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
-                        elif field == 'size':
+                        elif field in ('size',):
                             where.append(f"show.{field}<=?")
                             arguments.append(int(pattern))
                         elif field == 'start':
                             where.append(f"show.{field}<=?")
                             arguments.append(iso8601.parse_date(pattern))
+                        elif field in ('dow'):
+                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)<=?")
+                            arguments.append(int(pattern))
+                        elif field in ('hour'):
+                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)<=?")
+                            arguments.append(int(pattern))
+                        elif field in ('minute'):
+                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)<=?")
+                            arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
@@ -685,12 +721,21 @@ class Database(object):
                         if field in ('duration', 'age'):
                             where.append(f"show.{field}>=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
-                        elif field == 'size':
+                        elif field in ('size',):
                             where.append(f"show.{field}>=?")
                             arguments.append(int(pattern))
                         elif field == 'start':
                             where.append(f"show.{field}>=?")
                             arguments.append(iso8601.parse_date(pattern))
+                        elif field in ('dow'):
+                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)>=?")
+                            arguments.append(int(pattern))
+                        elif field in ('hour'):
+                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)>=?")
+                            arguments.append(int(pattern))
+                        elif field in ('minute'):
+                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)>=?")
+                            arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
