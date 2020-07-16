@@ -636,14 +636,6 @@ class Database(object):
                         'url': 'url_http'
                     }.get(field, field)
 
-                    if field == 'hour':
-                        # translate hour to utc
-                        pattern = (now
-                                   .replace(hour=int(pattern))
-                                   .replace(tzinfo=local_zone)
-                                   .astimezone(utc_zone)
-                                   .hour)
-
                     if field not in ('description', 'region', 'size', 'channel',
                                      'topic', 'title', 'hash', 'url_http', 'duration', 'age', 'start',
                                      'dow', 'hour', 'minute'):
@@ -664,7 +656,7 @@ class Database(object):
                             where.append(f"CAST(strftime('%w', show.start) AS INTEGER)=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)=?")
+                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
                             where.append(f"CAST(strftime('%M', show.start) AS INTEGER)=?")
@@ -687,7 +679,7 @@ class Database(object):
                             where.append(f"CAST(strftime('%w', show.start) AS INTEGER)!=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)!=?")
+                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)!=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
                             where.append(f"CAST(strftime('%M', show.start) AS INTEGER)!=?")
@@ -709,7 +701,7 @@ class Database(object):
                             where.append(f"CAST(strftime('%w', show.start) AS INTEGER)<=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)<=?")
+                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)<=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
                             where.append(f"CAST(strftime('%M', show.start) AS INTEGER)<=?")
@@ -731,7 +723,7 @@ class Database(object):
                             where.append(f"CAST(strftime('%w', show.start) AS INTEGER)>=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', show.start) AS INTEGER)>=?")
+                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)>=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
                             where.append(f"CAST(strftime('%M', show.start) AS INTEGER)>=?")
