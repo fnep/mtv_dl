@@ -1196,7 +1196,7 @@ def main() -> None:
             elif arguments['--remove']:
                 showlist.remove_from_downloaded(show_hash=arguments['--remove'])
             else:
-                show_table(sorted(showlist.downloaded()))
+                show_table(showlist.downloaded())
 
         else:
 
