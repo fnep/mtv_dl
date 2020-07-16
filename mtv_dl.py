@@ -975,7 +975,16 @@ class Downloader:
             "textBlue": "#0000FF",
             "textMagenta": "#FF00FF",
             "textCyan": "#00FFFF",
-            "textWhite": "#FFFFFF"}
+            "textWhite": "#FFFFFF",
+            "S1": "#000000",
+            "S2": "#FF0000",
+            "S3": "#00FF00",
+            "S4": "#FFFF00",
+            "S5": "#0000FF",
+            "S6": "#FF00FF",
+            "S7": "#00FFFF",
+            "S8": "#FFFFFF",
+        }
 
         def font_colour(text: str, colour: str) -> str:
             return "<font color=\"%s\">%s</font>\n" % (colour_to_rgb[colour], text)
@@ -984,13 +993,13 @@ class Downloader:
             for p_tag in soup.findAll("tt:p"):
                 # noinspection PyBroadException
                 try:
-                    srt.write(str(int(p_tag.get("xml:id").replace("sub", "")) + 1) + "\n")
+                    srt.write(str(int(re.sub(r'\D', '', p_tag.get("xml:id"))) + 1) + "\n")
                     srt.write(f"{p_tag['begin'].replace('.', ',')} --> {p_tag['end'].replace('.', ',')}\n")
                     for span_tag in p_tag.findAll('tt:span'):
                         srt.write(font_colour(span_tag.text, span_tag.get('style')).replace("&apos", "'"))
                     srt.write('\n\n')
-                except Exception:
-                    logger.debug('Unexpected data in subtitle xml file: %s', p_tag)
+                except Exception as e:
+                    logger.debug('Unexpected data in subtitle xml tag %r: %s', p_tag, e)
 
         return subtitles_srt_path
 
