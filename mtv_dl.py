@@ -9,6 +9,7 @@ Usage:
   {cmd} dump [options] [--sets=<file>] [<filter>...]
   {cmd} download [options] [--sets=<file>] [--low|--high] [<filter>...]
   {cmd} history [options] [--reset|--remove=<hash>]
+  {cmd} --help
 
 Commands:
   list                                  Show the list of query results as ascii table.
