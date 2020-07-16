@@ -45,7 +45,8 @@ Download options:
                                         {{filename}} (from server filename) and {{ext}} (file
                                         name extension including the dot), and all fields from
                                         the listing plus {{date}} and {{time}} (the single parts
-                                        of {{start}}).
+                                        of {{start}}). If {{ext}} is not in the definition, it's
+                                        appended automatically.
                                         [default: {{dir}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
   --mark-only                           Do not download any show, but mark it as downloaded
                                         in the history. This is to initialize a new filter
@@ -855,13 +856,17 @@ class Downloader:
                              file_extension: str,
                              media_type: str) -> bool:
 
+        posix_target = target.as_posix()
+        if '{ext}' not in posix_target:
+            posix_target += '{ext}'
+
         escaped_show_details = {k: escape_path(str(v)) for k, v in self.show.items()}
-        destination_file_path = Path(target.as_posix().format(dir=cwd,
-                                                              filename=file_name,
-                                                              ext=file_extension,
-                                                              date=self.show['start'].date().isoformat(),
-                                                              time=self.show['start'].strftime('%H-%M'),
-                                                              **escaped_show_details))
+        destination_file_path = Path(posix_target.format(dir=cwd,
+                                                         filename=file_name,
+                                                         ext=file_extension,
+                                                         date=self.show['start'].date().isoformat(),
+                                                         time=self.show['start'].strftime('%H-%M'),
+                                                         **escaped_show_details))
 
         destination_file_path.parent.mkdir(parents=True, exist_ok=True)
         try:
