@@ -994,15 +994,20 @@ class Downloader:
         def font_colour(text: str, colour: str) -> str:
             return "<font color=\"%s\">%s</font>\n" % (colour_to_rgb[colour], text)
 
+        def convert_time(t: str) -> str:
+            t = t.replace('.', ',')
+            t = re.sub(r'^1', '0', t)
+            return t
+
         with subtitles_srt_path.open('w') as srt:
             for p_tag in soup.findAll("tt:p"):
                 # noinspection PyBroadException
                 try:
                     srt.write(str(int(re.sub(r'\D', '', p_tag.get("xml:id"))) + 1) + "\n")
-                    srt.write(f"{p_tag['begin'].replace('.', ',')} --> {p_tag['end'].replace('.', ',')}\n")
+                    srt.write(f"{convert_time(p_tag['begin'])} --> {convert_time(p_tag['end'])}\n")
                     for span_tag in p_tag.findAll('tt:span'):
                         srt.write(font_colour(span_tag.text, span_tag.get('style')).replace("&apos", "'"))
-                    srt.write('\n\n')
+                    srt.write('\n')
                 except Exception as e:
                     logger.debug('Unexpected data in subtitle xml tag %r: %s', p_tag, e)
 
