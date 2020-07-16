@@ -27,7 +27,7 @@ Options:
   -d <path>, --dir=<path>               Directory to put the databases in (default is
                                         the current working directory).
   --include-future                      Include shows that have not yet started.
-  -c <path>, --config=<path>            Path to the config file.
+  --config=<path>                       Path to the config file.
 
 List options:
   -c <results>, --count=<results>       Limit the number of results. [default: 50]
