@@ -53,6 +53,8 @@ Download options:
                                         if upcoming shows are wanted.
   --no-subtitles                        Do not try to download subtitles.
   --no-nfo                              Do not nfo files.
+  --set-file-mod-time                   Sets the file modification time of the downloaded show to
+                                        the aired date (if available).
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
@@ -1019,7 +1021,8 @@ class Downloader:
                  target: Path,
                  *,
                  include_subtitles: bool = True,
-                 include_nfo: bool = True
+                 include_nfo: bool = True,
+                 set_file_modification_date: bool = False
                  ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
@@ -1035,6 +1038,10 @@ class Downloader:
 
             logger.debug('Downloading %s from %r.', self.label, show_url)
             show_file_path = list(self._download_files(temp_path, [show_url]))[0]
+            if set_file_modification_date and self.show['start']:
+                os.utime(show_file_path, (self.show['start'].replace(tzinfo=timezone.utc).timestamp(),
+                                          self.show['start'].replace(tzinfo=timezone.utc).timestamp()))
+
             show_file_name = show_file_path.name
             if '.' in show_file_name:
                 show_file_extension = show_file_path.suffix
@@ -1228,7 +1235,8 @@ def main() -> None:
                             if downloader.download(quality_preference,  # type: ignore
                                                    cw_dir, target_dir,
                                                    include_subtitles=not arguments['--no-subtitles'],
-                                                   include_nfo=not arguments['--no-nfo']):
+                                                   include_nfo=not arguments['--no-nfo'],
+                                                   set_file_modification_date=arguments['--set-file-mod-time']):
                                 showlist.add_to_downloaded(item)
                         else:
                             showlist.add_to_downloaded(downloader.show)
