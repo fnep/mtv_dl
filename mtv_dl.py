@@ -202,6 +202,7 @@ CONFIG_OPTIONS = {
     'low': bool,
     'no-bar': bool,
     'no-subtitles': bool,
+    'set-file-mod-time': bool,
     'quiet': bool,
     'refresh-after': int,
     'target': str,
