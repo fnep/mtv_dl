@@ -530,7 +530,12 @@ class Database(object):
                             if show['start'] and show['url']:
                                 title = show['title']
                                 size = int(show['size']) if show['size'] else 0
-                                start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
+                                try:
+                                    start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
+                                except OSError:
+                                    # The datetime.fromtimestamp call may fail because there are issues
+                                    # with very old timestamps on Windows. See: https://bugs.python.org/issue36439
+                                    continue
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                                 yield {
                                     'hash': self._show_hash(channel, topic, title, size, start),
