@@ -29,6 +29,13 @@ Options:
   --include-future                      Include shows that have not yet started.
   --config=<path>                       Path to the config file.
 
+Hooks:
+  --post-download=<path>                Programm to run after a download has finished.
+                                        Details about the downloaded how are given via
+                                        environment variables: FILE, HASH, CHANNEL, DESCRIPTION,
+                                        REGION, SIZE, TITLE, TOPIC, WEBSITE, START, and DURATION
+                                        (all prefixed with MTV_DL_).
+
 List options:
   -c <results>, --count=<results>       Limit the number of results. [default: 50]
 
@@ -144,6 +151,7 @@ import re
 import shlex
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -206,7 +214,8 @@ CONFIG_OPTIONS = {
     'quiet': bool,
     'refresh-after': int,
     'target': str,
-    'verbose': bool
+    'verbose': bool,
+    'post-download': str,
 }
 
 HISTORY_DATABASE_FILE = '.History.sqlite'
@@ -862,7 +871,7 @@ class Downloader:
                              target: Path,
                              file_name: str,
                              file_extension: str,
-                             media_type: str) -> bool:
+                             media_type: str) -> Union[Literal[False], Path]:
 
         posix_target = target.as_posix()
         if '{ext}' not in posix_target:
@@ -883,7 +892,7 @@ class Downloader:
             logger.warning('Skipped %s. Moving %r to %r failed: %s', self.label, source_path, destination_file_path, e)
         else:
             logger.info('Saved %s %s to %r.', media_type, self.label, destination_file_path)
-            return True
+            return destination_file_path
 
         return False
 
@@ -1056,8 +1065,9 @@ class Downloader:
                 show_file_extension = ''
 
             if show_file_extension in ('.mp4', '.flv', '.mp3'):
-                if not self._move_to_user_target(show_file_path, cwd, target,
-                                                 show_file_name, show_file_extension, 'show'):
+                final_show_file = self._move_to_user_target(show_file_path, cwd, target,
+                                                            show_file_name, show_file_extension, 'show')
+                if not final_show_file:
                     return None
 
             elif show_file_extension == '.m3u8':
@@ -1066,7 +1076,8 @@ class Downloader:
                     ts_file_path = self._download_hls_target(m3u8_segments, temp_path, show_url, quality)
                 else:
                     ts_file_path = self._download_m3u8_target(m3u8_segments, temp_path)
-                if not self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts', 'show'):
+                final_show_file = self._move_to_user_target(ts_file_path, cwd, target, show_file_name, '.ts', 'show')
+                if not final_show_file:
                     return None
 
             else:
@@ -1096,7 +1107,7 @@ class Downloader:
                 nfo_path.chmod(0o644)
                 self._move_to_user_target(nfo_path, cwd, target, show_file_name, '.nfo', 'nfo')
 
-            return show_file_path
+            return final_show_file
 
         except (urllib.error.HTTPError, OSError) as e:
             logger.error('Download of %s failed: %s', self.label, e)
@@ -1104,6 +1115,33 @@ class Downloader:
             shutil.rmtree(temp_path)
 
         return None
+
+
+def run_post_download_hook(executable: str, item: Database.Item, downloaded_file: Path) -> None:
+    try:
+        subprocess.run([executable],
+                       shell=True,
+                       check=True,
+                       stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT,
+                       env={
+                           "MTV_DL_FILE": downloaded_file.as_posix(),
+                           "MTV_DL_HASH": item['hash'],
+                           "MTV_DL_CHANNEL":  item['channel'],
+                           "MTV_DL_DESCRIPTION":  item['description'],
+                           "MTV_DL_REGION":  item['region'],
+                           "MTV_DL_SIZE":  str(item['size']),
+                           "MTV_DL_TITLE":  item['title'],
+                           "MTV_DL_TOPIC":  item['topic'],
+                           "MTV_DL_WEBSITE":  item['website'],
+                           "MTV_DL_START":  item['start'].isoformat(),
+                           "MTV_DL_DURATION":  str(item['duration'].total_seconds()),
+                       },
+                       encoding="utf-8")
+    except subprocess.CalledProcessError as e:
+        logger.error("Post-download hook %r returned with code %s:\n%s", executable, e.returncode, e.stdout)
+    else:
+        logger.info("Post-download hook %r returned successful.", executable)
 
 
 def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -1238,12 +1276,16 @@ def main() -> None:
                                 quality_preference = ('url_http_small', 'url_http', 'url_http_hd')
                             else:
                                 quality_preference = ('url_http', 'url_http_hd', 'url_http_small')
-                            if downloader.download(quality_preference,  # type: ignore
-                                                   cw_dir, target_dir,
-                                                   include_subtitles=not arguments['--no-subtitles'],
-                                                   include_nfo=not arguments['--no-nfo'],
-                                                   set_file_modification_date=arguments['--set-file-mod-time']):
+                            downloaded_file = downloader.download(
+                                quality_preference,  # type: ignore
+                                cw_dir, target_dir,
+                                include_subtitles=not arguments['--no-subtitles'],
+                                include_nfo=not arguments['--no-nfo'],
+                                set_file_modification_date=arguments['--set-file-mod-time'])
+                            if downloaded_file:
                                 showlist.add_to_downloaded(item)
+                                if arguments['--post-download']:
+                                    run_post_download_hook(arguments['--post-download'], item, downloaded_file)
                         else:
                             showlist.add_to_downloaded(downloader.show)
                             logger.info('Marked %s as downloaded.', downloader.label)
