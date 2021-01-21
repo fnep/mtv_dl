@@ -1117,9 +1117,9 @@ class Downloader:
         return None
 
 
-def run_post_download_hook(executable: str, item: Database.Item, downloaded_file: Path) -> None:
+def run_post_download_hook(executable: Path, item: Database.Item, downloaded_file: Path) -> None:
     try:
-        subprocess.run([executable],
+        subprocess.run([executable.as_posix()],
                        shell=True,
                        check=True,
                        stdout=subprocess.PIPE,
@@ -1285,7 +1285,8 @@ def main() -> None:
                             if downloaded_file:
                                 showlist.add_to_downloaded(item)
                                 if arguments['--post-download']:
-                                    run_post_download_hook(arguments['--post-download'], item, downloaded_file)
+                                    executable = Path(arguments['--post-download']).expanduser()
+                                    run_post_download_hook(executable, item, downloaded_file)
                         else:
                             showlist.add_to_downloaded(downloader.show)
                             logger.info('Marked %s as downloaded.', downloader.label)
