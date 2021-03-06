@@ -1109,7 +1109,7 @@ class Downloader:
 
             return final_show_file
 
-        except (urllib.error.HTTPError, OSError) as e:
+        except (urllib.error.HTTPError, OSError, ValueError) as e:
             logger.error('Download of %s failed: %s', self.label, e)
         finally:
             shutil.rmtree(temp_path)
