@@ -758,7 +758,7 @@ class Database(object):
                                              'Property and filter rule expected separated by an operator.')
 
         if not include_future:
-            where.append("date(show.start) < date('now')")
+            where.append("datetime(show.start) < datetime('now')")
 
         query = """
             SELECT show.*, downloaded.downloaded
