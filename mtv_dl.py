@@ -1210,9 +1210,8 @@ def main() -> None:
         logging_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
                                                        "%Y-%m-%dT%H:%M:%S%z"))
     else:
-        logging_handler = RichHandler(console=console)
+        logging_handler = RichHandler(console=console, show_path=False, omit_repeated_times=False)
         logging_handler.setFormatter(logging.Formatter(datefmt="%Y-%m-%dT%H:%M:%S%z "))
-        logging_handler._log_render.show_path = False
 
     logger.addHandler(logging_handler)
     sys.excepthook = lambda _c, _e, _t: logger.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
