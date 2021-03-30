@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mtv_dl"
-version = "0.18"
+version = "0.0.0"
 description = "MediathekView Downloader"
 readme = "DESCRIPTION.rst"
 authors = ["Frank Epperlein <frank+mtv_dl@epperle.in>"]
@@ -35,6 +35,11 @@ twine = "^3.1.1"
 [tool.poetry.scripts]
 mtv_dl = 'mtv_dl:main'
 
+[tool.poetry-dynamic-versioning]
+enable = true
+pattern = '^v(?P<base>\d+\.\d+)'
+format = '{base}.{distance}'
+
 [build-system]
 requires = ["poetry>=0.12"]
-build-backend = "poetry.masonry.api"
+build-backend = ["poetry.masonry.api", "poetry-dynamic-versioning"]

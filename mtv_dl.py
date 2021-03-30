@@ -2,7 +2,7 @@
 # coding: utf-8
 
 # noinspection SpellCheckingInspection
-"""MediathekView-Commandline-Downloader
+"""MediathekView-Commandline-Downloader {version}
 
 Usage:
   {cmd} list [options] [--sets=<file>] [--count=<results>] [<filter>...]
@@ -197,6 +197,8 @@ from typing_extensions import Literal
 from typing_extensions import TypedDict
 from yaml.error import YAMLError
 
+__version__ = "0.0.0"
+
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
@@ -219,7 +221,7 @@ CONFIG_OPTIONS = {
 }
 
 HISTORY_DATABASE_FILE = '.History.sqlite'
-FILMLISTE_DATABASE_FILE = '.Filmliste.{script_version}.sqlite'
+FILMLISTE_DATABASE_FILE = f'.Filmliste.{__version__}.sqlite'
 
 # regex to find characters not allowed in file names
 INVALID_FILENAME_CHARACTERS = re.compile("[{}]".format(re.escape('<>:"/\\|?*' + "".join(chr(i) for i in range(32)))))
@@ -418,9 +420,8 @@ class Database(object):
         self.connection.commit()
 
     def __init__(self, filmliste: Path, history: Path) -> None:
-        filmliste_path = filmliste.parent / filmliste.name.format(script_version=self._script_version)
-        logger.debug('Opening Filmliste database %r.', filmliste_path)
-        self.connection = sqlite3.connect(filmliste_path.absolute().as_posix(),
+        logger.debug('Opening Filmliste database %r.', filmliste)
+        self.connection = sqlite3.connect(filmliste.absolute().as_posix(),
                                           detect_types=sqlite3.PARSE_DECLTYPES,
                                           timeout=10)
         logger.debug('Opening History database %r.', history)
@@ -497,10 +498,6 @@ class Database(object):
                 time.sleep(10)
             else:
                 break
-
-    @property
-    def _script_version(self) -> int:
-        return int(os.environ.get('SCRIPT_VERSION', Path(__file__).stat().st_mtime))
 
     def _get_shows(self) -> Iterable["Database.Item"]:
         meta: Dict[str, Any] = {}
@@ -1183,6 +1180,7 @@ def main() -> None:
 
     # argument handling
     arguments = docopt.docopt(__doc__.format(cmd=Path(__file__).name,
+                                             version=__version__,
                                              config_file=DEFAULT_CONFIG_FILE,
                                              config_options=wrap(', '.join("%s (%s)" % (c, k.__name__)
                                                                            for c, k in CONFIG_OPTIONS.items()),
