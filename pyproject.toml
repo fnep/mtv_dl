@@ -4,7 +4,7 @@ version = "0.18"
 description = "MediathekView Downloader"
 readme = "DESCRIPTION.rst"
 authors = ["Frank Epperlein <frank+mtv_dl@epperle.in>"]
-repository = "https://github.com/efenka/mtv_dl"
+repository = "https://github.com/fnep/mtv_dl"
 license = "MIT License"
 classifiers = [
     "Topic :: Multimedia :: Video",
