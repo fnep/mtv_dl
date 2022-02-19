@@ -536,12 +536,7 @@ class Database(object):
                             if show['start'] and show['url']:
                                 title = show['title']
                                 size = int(show['size']) if show['size'] else 0
-                                try:
-                                    start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
-                                except OSError:
-                                    # The datetime.fromtimestamp call may fail because there are issues
-                                    # with very old timestamps on Windows. See: https://bugs.python.org/issue36439
-                                    continue
+                                start = (datetime.fromtimestamp(0, tz=utc_zone) + timedelta(seconds=int(show['start']))).replace(tzinfo=None)
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                                 yield {
                                     'hash': self._show_hash(channel, topic, title, size, start),
@@ -564,7 +559,7 @@ class Database(object):
                                 }
 
     def initialize_if_old(self, refresh_after: int) -> None:
-        database_age = now - datetime.fromtimestamp(self.filmliste_version, tz=utc_zone)
+        database_age = now - (datetime.fromtimestamp(0, tz=utc_zone) + timedelta(seconds=self.filmliste_version))
         if database_age > timedelta(hours=refresh_after):
             logger.debug('Database age is %s (too old).', database_age)
             self.initialize_filmliste()
