@@ -27,6 +27,7 @@ PyYAML = "^5.3"
 beautifulsoup4 = "^4.8.2"
 typing_extensions = "^3.7.4"
 rich = "^10.0.0"
+certifi = "^2021.10.8"
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.770"
