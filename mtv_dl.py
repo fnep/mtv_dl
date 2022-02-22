@@ -28,6 +28,7 @@ Options:
                                         the current working directory).
   --include-future                      Include shows that have not yet started.
   --config=<path>                       Path to the config file.
+  --certifi                             Use certifi instead of builtin SSL certificates
 
 Hooks:
   --post-download=<path>                Programm to run after a download has finished.
@@ -202,6 +203,7 @@ __version__ = "0.0.0"
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
+CAFILE = None
 DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
@@ -473,7 +475,7 @@ class Database(object):
             retries -= 1
             try:
                 logger.debug('Opening database from %r.', FILMLISTE_URL)
-                response: http.client.HTTPResponse = urllib.request.urlopen(FILMLISTE_URL, timeout=9)
+                response: http.client.HTTPResponse = urllib.request.urlopen(FILMLISTE_URL, timeout=9, cafile=CAFILE)
                 total_size = int(response.getheader('content-length') or 0)
                 with BytesIO() as buffer:
                     with progress_bar() as progress:
@@ -841,7 +843,7 @@ class Downloader:
 
             for url in target_urls:
 
-                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=60)
+                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=60, cafile=CAFILE)
 
                 # determine file size for progressbar
                 file_sizes.append(int(response.getheader('content-length') or 0))
@@ -1223,6 +1225,11 @@ def main() -> None:
     # progressbar handling
     global HIDE_PROGRESSBAR
     HIDE_PROGRESSBAR = bool(arguments['--logfile']) or bool(arguments['--no-bar']) or arguments['--quiet']
+
+    global CAFILE
+    if arguments['--certifi']:
+        import certifi
+        CAFILE = certifi.where()
 
     if arguments['--verbose']:
         logger.setLevel(logging.DEBUG)
