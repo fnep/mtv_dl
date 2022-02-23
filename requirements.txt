@@ -7,3 +7,5 @@ rich
 durationpy>=0.5
 PyYAML
 beautifulsoup4
+certifi
+typing-extensions
