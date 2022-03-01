@@ -1190,12 +1190,6 @@ def main() -> None:
                                                                  width=80,
                                                                  subsequent_indent=' ' * 4)))
 
-    # broken console encoding handling  (http://archive.is/FRcJe#60%)
-    if sys.stdout.encoding != 'UTF-8':
-        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')  # type: ignore
-    if sys.stderr.encoding != 'UTF-8':
-        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')  # type: ignore
-
     # rfc6266 logger fix (don't expect an upstream fix for that)
     for logging_handler in rfc6266.LOGGER.handlers:
         rfc6266.LOGGER.removeHandler(logging_handler)
