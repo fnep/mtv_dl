@@ -18,19 +18,21 @@ classifiers = [
 [tool.poetry.dependencies]
 python = "^3.6"
 rfc6266 = "^0.0.4"
-iso8601 = "^0.1.12"
+iso8601 = "^0.1.16"
 docopt = "^0.6.2"
-pydash = "^4.7.6"
-durationpy = ">=0.5"
-PyYAML = "^5.3"
-beautifulsoup4 = "^4.8.2"
-typing_extensions = "^3.7.4"
-rich = "^10.0.0"
+pydash = "^4.9.3"
+durationpy = "0.5"
+PyYAML = "^5.4.1"
+beautifulsoup4 = "^4.10.0"
+typing_extensions = "^3.10.0.2"
+rich = "^10.11.0"
 certifi = "^2021.10.8"
 
 [tool.poetry.dev-dependencies]
-mypy = "^0.770"
-twine = "^3.1.1"
+mypy = "^0.931"
+twine = "^3.8.0"
+types-PyYAML = "^6.0.4"
+types-certifi = "^2021.10.8"
 
 [tool.poetry.scripts]
 mtv_dl = 'mtv_dl:main'
