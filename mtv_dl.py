@@ -464,7 +464,11 @@ class Database(object):
         h.update(topic.encode())
         h.update(title.encode())
         h.update(str(size).encode())
-        h.update(str(start.timestamp()).encode())
+        try:
+            h.update(str(start.timestamp()).encode())
+        except (OSError, OverflowError):
+            # This can happen on some platforms. In this case simply ignore the timestamp for the hash.
+            pass
         return h.hexdigest()
 
     @contextmanager
@@ -536,14 +540,11 @@ class Database(object):
                             if show['start'] and show['url']:
                                 title = show['title']
                                 size = int(show['size']) if show['size'] else 0
-                                try:
-                                    start = datetime.fromtimestamp(int(show['start']), tz=utc_zone)
-                                except (OverflowError, OSError):
-                                    # The datetime.fromtimestamp call may fail because there are issues
-                                    # with very old timestamps on Windows. See: https://bugs.python.org/issue36439
-                                    # On some platforms, dates not within 1970 through 2038 may overflow (see issue #42).
-                                    # These episodes will be assigned a default date of 1970-01-01
-                                    start = datetime.fromtimestamp(0, tz=utc_zone)
+                                
+                                # this should work on all platforms.
+                                # See https://github.com/fnep/mtv_dl/issues/42 or https://bugs.python.org/issue36439
+                                start = datetime.fromtimestamp(0, tz=utc_zone) + timedelta(seconds=int(show['start']))
+
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                                 yield {
                                     'hash': self._show_hash(channel, topic, title, size, start.replace(tzinfo=None)),
@@ -792,7 +793,14 @@ def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = No
         if title == 'hash':
             return str(obj)[:11]
         elif isinstance(obj, datetime):
-            return obj.replace(tzinfo=utc_zone).astimezone(None).isoformat()
+            obj = obj.replace(tzinfo=utc_zone)
+            try:
+                obj = obj.astimezone(None)
+            except (OSError, OverflowError):
+                # This can fail on some platforms.
+                # In this case simply show the time in UTC.
+                pass
+            return obj.isoformat()
         elif isinstance(obj, timedelta):
             return str(re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip())
         else:
