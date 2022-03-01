@@ -42,5 +42,5 @@ pattern = '^v(?P<base>\d+\.\d+)'
 format = '{base}.{distance}'
 
 [build-system]
-requires = ["poetry>=0.12"]
-build-backend = ["poetry.masonry.api", "poetry-dynamic-versioning"]
+requires = ["poetry>=1.0.2", "poetry-dynamic-versioning"]
+build-backend = "poetry.masonry.api"
