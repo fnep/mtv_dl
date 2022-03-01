@@ -182,7 +182,6 @@ import docopt
 import durationpy
 import iso8601
 import rfc6266
-import tzlocal
 import yaml
 from bs4 import BeautifulSoup
 from pydash import py_
@@ -233,7 +232,6 @@ INVALID_FILENAME_CHARACTERS = re.compile("[{}]".format(re.escape('<>:"/\\|?*' + 
 FILMLISTE_URL = "https://liste.mediathekview.de/Filmliste-akt.xz"
 
 logger = logging.getLogger('mtv_dl')
-local_zone = tzlocal.get_localzone()
 utc_zone = timezone.utc
 now = datetime.now(tz=utc_zone).replace(second=0, microsecond=0)
 
@@ -539,15 +537,13 @@ class Database(object):
                                 title = show['title']
                                 size = int(show['size']) if show['size'] else 0
                                 try:
-                                    start = datetime.fromtimestamp(int(show['start']), tz=utc_zone).replace(tzinfo=None)
-                                except OverflowError:
-                                    # On some platforms, dates not within 1970 through 2038 may overflow.
-                                    # We skip them to avoid issues like #42.
-                                    continue
-                                except OSError:
+                                    start = datetime.fromtimestamp(int(show['start']), tz=utc_zone)
+                                except (OverflowError, OSError):
                                     # The datetime.fromtimestamp call may fail because there are issues
                                     # with very old timestamps on Windows. See: https://bugs.python.org/issue36439
-                                    continue
+                                    # On some platforms, dates not within 1970 through 2038 may overflow (see issue #42).
+                                    # These episodes will be assigned a default date of 1970-01-01
+                                    start = datetime.fromtimestamp(0, tz=utc_zone)
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                                 yield {
                                     'hash': self._show_hash(channel, topic, title, size, start),
@@ -563,9 +559,9 @@ class Database(object):
                                     'url_http_hd': self._qualify_url(show['url'], show['url_hd']),
                                     'url_http_small': self._qualify_url(show['url'], show['url_small']),
                                     'url_subtitles': show['url_subtitles'],
-                                    'start': start,
+                                    'start': start.replace(tzinfo=None),
                                     'duration': duration,
-                                    'age': now.replace(tzinfo=None)-start,
+                                    'age': now-start,
                                     'downloaded': None,
                                 }
 
@@ -796,7 +792,7 @@ def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = No
         if title == 'hash':
             return str(obj)[:11]
         elif isinstance(obj, datetime):
-            return obj.replace(tzinfo=utc_zone).astimezone(local_zone).isoformat()
+            return obj.replace(tzinfo=utc_zone).astimezone(None).isoformat()
         elif isinstance(obj, timedelta):
             return str(re.sub(r'(\d+)', r' \1', durationpy.to_str(obj, extended=True)).strip())
         else:
