@@ -542,8 +542,9 @@ class Database(object):
                                     # The datetime.fromtimestamp call may fail because there are issues
                                     # with very old timestamps on Windows. See: https://bugs.python.org/issue36439
                                     # On some platforms, dates not within 1970 through 2038 may overflow (see issue #42).
-                                    # These episodes will be assigned a default date of 1970-01-01
-                                    start = datetime.fromtimestamp(0, tz=utc_zone)
+                                    # These episodes will be assigned a default date of 1970-01-02.
+                                    # With a smaller timedelta, timestamp() might fail on Windows.
+                                    start = datetime.fromtimestamp(0, tz=utc_zone) + timedelta(days=2)
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                                 yield {
                                     'hash': self._show_hash(channel, topic, title, size, start.replace(tzinfo=None)),
