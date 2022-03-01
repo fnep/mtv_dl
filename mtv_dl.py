@@ -625,7 +625,7 @@ class Database(object):
     @staticmethod
     def read_filter_sets(sets_file_path: Optional[Path], default_filter: List[str]) -> Iterator[List[str]]:
         if sets_file_path:
-            with sets_file_path.expanduser().open('r+') as set_fh:
+            with sets_file_path.expanduser().open('r+', encoding='utf-8') as set_fh:
                 for line in set_fh:
                     if line.strip() and not re.match(r'^\s*#', line):
                         yield default_filter + shlex.split(line)
@@ -898,7 +898,7 @@ class Downloader:
     @staticmethod
     def _get_m3u8_segments(base_url: str, m3u8_file_path: Path) -> Iterator[Dict[str, Any]]:
 
-        with m3u8_file_path.open('r+') as fh:
+        with m3u8_file_path.open('r+', encoding='utf-8') as fh:
             segment: Dict[str, Any] = {}
             for line in fh:
                 if not line:
@@ -986,7 +986,7 @@ class Downloader:
     def _convert_subtitles_xml_to_srt(subtitles_xml_path: Path) -> Path:
 
         subtitles_srt_path = subtitles_xml_path.parent / (subtitles_xml_path.stem + '.srt')
-        soup = BeautifulSoup(subtitles_xml_path.read_text(), "html.parser")
+        soup = BeautifulSoup(subtitles_xml_path.read_text(encoding='utf-8'), "html.parser")
 
         colour_to_rgb = {
             "textBlack": "#000000",
@@ -1015,7 +1015,7 @@ class Downloader:
             t = re.sub(r'^1', '0', t)
             return t
 
-        with subtitles_srt_path.open('w') as srt:
+        with subtitles_srt_path.open('w', encoding='utf-8') as srt:
             for p_tag in soup.findAll("tt:p"):
                 # noinspection PyBroadException
                 try:
@@ -1148,7 +1148,8 @@ def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
     config_file_path = (Path(arguments['--config']) if arguments['--config'] else DEFAULT_CONFIG_FILE).expanduser()
 
     try:
-        config = yaml.safe_load(config_file_path.open())
+        with config_file_path.open(encoding='utf-8') as fr:
+            config = yaml.safe_load(fr)
 
     except OSError as e:
         if arguments['--config']:
@@ -1208,7 +1209,7 @@ def main() -> None:
 
     # ISO8601 logger
     if arguments['--logfile']:
-        logging_handler = logging.FileHandler(Path(arguments['--logfile']).expanduser())
+        logging_handler = logging.FileHandler(Path(arguments['--logfile']).expanduser(), encoding='utf-8')
         logging_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
                                                        "%Y-%m-%dT%H:%M:%S%z"))
     else:
