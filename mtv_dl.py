@@ -546,7 +546,7 @@ class Database(object):
                                     start = datetime.fromtimestamp(0, tz=utc_zone)
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
                                 yield {
-                                    'hash': self._show_hash(channel, topic, title, size, start),
+                                    'hash': self._show_hash(channel, topic, title, size, start.replace(tzinfo=None)),
                                     'channel': channel,
                                     'description': show['description'],
                                     'region': region,
