@@ -177,6 +177,7 @@ from typing import Optional
 from typing import Tuple
 from typing import Union
 from xml.etree import ElementTree as ET
+from tempfile import NamedTemporaryFile
 
 import docopt
 import durationpy
@@ -951,8 +952,8 @@ class Downloader:
         logger.debug('%d HLS segments to download.', len(hls_target_segments))
 
         # download and join the segment files
-        temp_file_path = Path(tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')[1])
-        with temp_file_path.open('wb') as out_fh:
+        with NamedTemporaryFile(mode='wb', prefix='.tmp', dir=temp_dir_path, delete=False) as out_fh:
+            temp_file_path = Path(temp_dir_path) / out_fh.name
             for segment_file_path in hls_target_files:
 
                 with segment_file_path.open('rb') as in_fh:
@@ -970,8 +971,9 @@ class Downloader:
         logger.debug('%d m3u8 segments to download.', len(m3u8_segments))
 
         # download and join the segment files
-        temp_file_path = Path(tempfile.mkstemp(dir=temp_dir_path, prefix='.tmp')[1])
-        with temp_file_path.open('wb') as out_fh:
+        with NamedTemporaryFile(mode='wb', prefix='.tmp', dir=temp_dir_path, delete=False) as out_fh:
+            temp_file_path = Path(temp_dir_path) / out_fh.name
+
             for segment_file_path in hls_target_files:
 
                 with segment_file_path.open('rb') as in_fh:
@@ -1101,8 +1103,11 @@ class Downloader:
                 if self.show['start']:
                     ET.SubElement(nfo_movie, 'aired').text = self.show['start'].isoformat()
                 ET.SubElement(nfo_movie, 'country').text = self.show['region']
-                nfo_path = Path(tempfile.mkstemp(dir=temp_path, prefix='.tmp')[1])
-                ET.ElementTree(nfo_movie).write(nfo_path.as_posix(), xml_declaration=True, encoding="UTF-8")
+                
+                with NamedTemporaryFile(mode='wb', prefix='.tmp', dir=temp_path, delete=False) as out_fh:
+                    nfo_path = Path(temp_path) / out_fh.name
+                    out_fh.write(ET.tostring(nfo_movie, xml_declaration=True, encoding="UTF-8"))
+
                 nfo_path.chmod(0o644)
                 self._move_to_user_target(nfo_path, cwd, target, show_file_name, '.nfo', 'nfo')
 
