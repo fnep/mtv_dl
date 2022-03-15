@@ -104,7 +104,7 @@ Installation
 
 Requirements:
 
-- python3.6 or later
+- python3.8 or later
 - everything in requirements.txt
 
 The easiest way is to install using pip:

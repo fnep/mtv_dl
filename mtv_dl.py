@@ -141,7 +141,6 @@ Config file:
 
  """
 
-import codecs
 import hashlib
 import http.client
 import json
@@ -167,17 +166,19 @@ from datetime import timezone
 from io import BytesIO
 from itertools import chain
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from textwrap import fill as wrap
 from typing import Any
 from typing import Dict
 from typing import Iterable
 from typing import Iterator
 from typing import List
+from typing import Literal
 from typing import Optional
 from typing import Tuple
+from typing import TypedDict
 from typing import Union
 from xml.etree import ElementTree as ET
-from tempfile import NamedTemporaryFile
 
 import docopt
 import durationpy
@@ -194,8 +195,6 @@ from rich.progress import Progress
 from rich.progress import TextColumn
 from rich.progress import TimeRemainingColumn
 from rich.table import Table
-from typing_extensions import Literal
-from typing_extensions import TypedDict
 from yaml.error import YAMLError
 
 __version__ = "0.0.0"
