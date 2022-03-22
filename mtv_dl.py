@@ -196,6 +196,7 @@ from rich.progress import TextColumn
 from rich.progress import TimeRemainingColumn
 from rich.table import Table
 from yaml.error import YAMLError
+import ijson
 
 __version__ = "0.0.0"
 
@@ -510,12 +511,19 @@ class Database(object):
         with self._showlist() as showlist_archive:
             with lzma.open(showlist_archive, 'rt', encoding='utf-8') as fh:
                 logger.debug('Loading database items.')
-                data = json.load(fh, object_pairs_hook=lambda _pairs: _pairs)
+
+                # this will loop one time over the whole json for the sole purpose of counting
+                # items to be able to render the progressbar below
+                items_count = 0
+                if not HIDE_PROGRESSBAR:
+                    items_count = sum(1 for _ in ijson.kvitems(fh, ''))
+                    fh.seek(0)
+
                 with progress_bar() as progress:
                     bar_id = progress.add_task(
-                        total=len(data),
+                        total=items_count,
                         description='Reading database items')
-                    for p in data:
+                    for p in ijson.kvitems(fh, ''):
                         progress.update(bar_id, advance=1)
                         if not meta and p[0] == 'Filmliste':
                             meta = {
