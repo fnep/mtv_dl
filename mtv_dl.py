@@ -341,7 +341,7 @@ class Database(object):
         logger.debug('Initializing Filmliste database in %r.', self.database_file('main'))
         cursor = self.connection.cursor()
         try:
-            cursor.execute("""        
+            cursor.execute("""
                 CREATE TABlE main.show (
                     hash TEXT,
                     channel TEXT,
@@ -548,7 +548,7 @@ class Database(object):
                             if show['start'] and show['url']:
                                 title = show['title']
                                 size = int(show['size']) if show['size'] else 0
-                                
+
                                 # this should work on all platforms.
                                 # See https://github.com/fnep/mtv_dl/issues/42 or https://bugs.python.org/issue36439
                                 start = datetime.fromtimestamp(0, tz=utc_zone) + timedelta(seconds=int(show['start']))
@@ -1118,7 +1118,7 @@ class Downloader:
                 if self.show['start']:
                     ET.SubElement(nfo_movie, 'aired').text = self.show['start'].isoformat()
                 ET.SubElement(nfo_movie, 'country').text = self.show['region']
-                
+
                 with NamedTemporaryFile(mode='wb', prefix='.tmp', dir=temp_path, delete=False) as out_fh:
                     nfo_path = Path(temp_path) / out_fh.name
                     out_fh.write(ET.tostring(nfo_movie, xml_declaration=True, encoding="UTF-8"))
