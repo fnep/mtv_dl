@@ -125,6 +125,12 @@ Filter sets:
   by these filters. Be aware that this is not faster then running all queries separately
   but just more comfortable.
 
+  It is possible to specify different target file names per filter in a set. A 'target' field
+  can be added to a filter line in the set. It follows the same syntax as the --target option.
+  The target field overrules the --target parameter. It could look like this:
+
+    topic=Spielfilm title='^Edgar Wallace: ' duration+80m target='{dir}/Edgar Wallace/{date}_{title}{ext}'
+
 Config file:
 
   The config file is an optional, yaml formatted text file, that allows to overwrite the most
@@ -648,6 +654,7 @@ class Database(object):
 
         where = []
         arguments: List[Any] = []
+        pass_through = {}
         if rules:
             logger.debug('Applying filter: %s (limit: %s)', ', '.join(rules), limit)
 
@@ -662,10 +669,9 @@ class Database(object):
                     field = {
                         'url': 'url_http'
                     }.get(field, field)
-
                     if field not in ('description', 'region', 'size', 'channel',
                                      'topic', 'title', 'hash', 'url_http', 'duration', 'age', 'start',
-                                     'dow', 'hour', 'minute'):
+                                     'dow', 'hour', 'minute', 'target'):
                         raise ConfigurationError('Invalid field %r.' % (field,))
 
                     if operator == '=':
@@ -688,6 +694,8 @@ class Database(object):
                         elif field in ('minute'):
                             where.append(f"CAST(strftime('%M', show.start) AS INTEGER)=?")
                             arguments.append(int(pattern))
+                        elif field in ('target'):
+                            pass_through['target'] = str(pattern)
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
@@ -782,7 +790,7 @@ class Database(object):
         cursor = self.connection.cursor()
         cursor.execute(query, arguments)
         for row in cursor:
-            yield dict(row)  # type: ignore
+            yield { **dict(row), **pass_through}  # type: ignore
 
     def downloaded(self) -> Iterator["Database.Item"]:
         cursor = self.connection.cursor()
@@ -1297,7 +1305,8 @@ def main() -> None:
                                 quality_preference = ('url_http', 'url_http_hd', 'url_http_small')
                             downloaded_file = downloader.download(
                                 quality_preference,  # type: ignore
-                                cw_dir, target_dir,
+                                cw_dir, 
+                                Path(item['target']).expanduser() if 'target' in item else target_dir,
                                 include_subtitles=not arguments['--no-subtitles'],
                                 include_nfo=not arguments['--no-nfo'],
                                 set_file_modification_date=arguments['--set-file-mod-time'])
