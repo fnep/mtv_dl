@@ -866,7 +866,7 @@ class Downloader:
                 if response.getheader('content-disposition'):
                     cd_value, cd_header = cgi.parse_header(response.getheader('content-disposition'))
                     file_name = cd_header.get('filename', default_filename)
-rm                else:
+                else:
                     file_name = default_filename
                 destination_file_path = destination_dir_path / file_name
 
