@@ -1,4 +1,3 @@
-rfc6266
 iso8601
 docopt
 pydash

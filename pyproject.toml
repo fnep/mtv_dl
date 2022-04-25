@@ -17,7 +17,6 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.8"
-rfc6266 = "^0.0.4"
 iso8601 = "^1.0.2"
 docopt = "^0.6.2"
 pydash = "^5.1.0"

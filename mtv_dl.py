@@ -141,6 +141,7 @@ Config file:
 
  """
 
+import cgi
 import hashlib
 import http.client
 import json
@@ -183,7 +184,6 @@ from xml.etree import ElementTree as ET
 import docopt
 import durationpy
 import iso8601
-import rfc6266
 import yaml
 from bs4 import BeautifulSoup
 from pydash import py_
@@ -863,9 +863,11 @@ class Downloader:
 
                 # determine file name and destination
                 default_filename = os.path.basename(url)
-                file_name = rfc6266.parse_headers(
-                    content_disposition=response.getheader('content-disposition'),
-                    location=response.getheader('content-location')).filename_unsafe or default_filename
+                if response.getheader('content-disposition'):
+                    cd_value, cd_header = cgi.parse_header(response.getheader('content-disposition'))
+                    file_name = cd_header.get('filename', default_filename)
+rm                else:
+                    file_name = default_filename
                 destination_file_path = destination_dir_path / file_name
 
                 # actual download
@@ -1210,13 +1212,8 @@ def main() -> None:
                                                                  width=80,
                                                                  subsequent_indent=' ' * 4)))
 
-    # rfc6266 logger fix (don't expect an upstream fix for that)
-    for logging_handler in rfc6266.LOGGER.handlers:
-        rfc6266.LOGGER.removeHandler(logging_handler)
-
-    # mute third party modules              1
+    # mute third party modules
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("rfc6266").setLevel(logging.WARNING)
 
     # config handling
     arguments = load_config(arguments)
