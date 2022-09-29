@@ -66,6 +66,7 @@ Download options:
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
+  --strm-files                          Create .strm files instead of downloading media
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -220,6 +221,7 @@ CONFIG_OPTIONS = {
     'target': str,
     'verbose': bool,
     'post-download': str,
+    'strm-files': bool,
 }
 
 HISTORY_DATABASE_FILE = '.History.sqlite'
@@ -882,6 +884,19 @@ class Downloader:
 
                 yield destination_file_path
 
+    def _create_strm_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
+
+        file_sizes = []
+        for url in target_urls:
+
+            file_name = os.path.splitext(os.path.basename(url))[0]+'.strm'
+            destination_file_path = destination_dir_path / file_name
+
+            with destination_file_path.open('w') as fh:
+                fh.write(url)
+
+        yield destination_file_path
+
     def _move_to_user_target(self,
                              source_path: Path,
                              cwd: Path,
@@ -1055,7 +1070,8 @@ class Downloader:
                  *,
                  include_subtitles: bool = True,
                  include_nfo: bool = True,
-                 set_file_modification_date: bool = False
+                 set_file_modification_date: bool = False,
+                 strm_files: bool = False
                  ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
@@ -1070,7 +1086,14 @@ class Downloader:
                 return None
 
             logger.debug('Downloading %s from %r.', self.label, show_url)
-            show_file_path = list(self._download_files(temp_path, [show_url]))[0]
+
+            if not strm_files:
+                show_file_path = list(
+                    self._download_files(temp_path, [show_url]))[0]
+            else:
+                show_file_path = list(
+                    self._create_strm_files(temp_path, [show_url]))[0]
+
             if set_file_modification_date and self.show['start']:
                 os.utime(show_file_path, (self.show['start'].replace(tzinfo=timezone.utc).timestamp(),
                                           self.show['start'].replace(tzinfo=timezone.utc).timestamp()))
@@ -1082,7 +1105,7 @@ class Downloader:
             else:
                 show_file_extension = ''
 
-            if show_file_extension in ('.mp4', '.flv', '.mp3'):
+            if show_file_extension in ('.mp4', '.flv', '.mp3', '.strm'):
                 final_show_file = self._move_to_user_target(show_file_path, cwd, target,
                                                             show_file_name, show_file_extension, 'show')
                 if not final_show_file:
@@ -1297,7 +1320,8 @@ def main() -> None:
                                 cw_dir, target_dir,
                                 include_subtitles=not arguments['--no-subtitles'],
                                 include_nfo=not arguments['--no-nfo'],
-                                set_file_modification_date=arguments['--set-file-mod-time'])
+                                set_file_modification_date=arguments['--set-file-mod-time'],
+                                strm_files=arguments['--strm-files'])
                             if downloaded_file:
                                 showlist.add_to_downloaded(item)
                                 if arguments['--post-download']:
