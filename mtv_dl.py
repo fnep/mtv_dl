@@ -59,6 +59,7 @@ Download options:
   --mark-only                           Do not download any show, but mark it as downloaded
                                         in the history. This is to initialize a new filter
                                         if upcoming shows are wanted.
+  --strm                                Create .strm files instead of downloading media
   --no-subtitles                        Do not try to download subtitles.
   --no-nfo                              Do not nfo files.
   --set-file-mod-time                   Sets the file modification time of the downloaded show to
@@ -66,7 +67,6 @@ Download options:
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
-  --strm-files                          Create .strm files instead of downloading media
 
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
@@ -221,7 +221,7 @@ CONFIG_OPTIONS = {
     'target': str,
     'verbose': bool,
     'post-download': str,
-    'strm-files': bool,
+    'strm': bool,
 }
 
 HISTORY_DATABASE_FILE = '.History.sqlite'
@@ -1071,7 +1071,7 @@ class Downloader:
                  include_subtitles: bool = True,
                  include_nfo: bool = True,
                  set_file_modification_date: bool = False,
-                 strm_files: bool = False
+                 create_strm_files: bool = False
                  ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
@@ -1087,7 +1087,7 @@ class Downloader:
 
             logger.debug('Downloading %s from %r.', self.label, show_url)
 
-            if not strm_files:
+            if not create_strm_files:
                 show_file_path = list(
                     self._download_files(temp_path, [show_url]))[0]
             else:
@@ -1321,7 +1321,7 @@ def main() -> None:
                                 include_subtitles=not arguments['--no-subtitles'],
                                 include_nfo=not arguments['--no-nfo'],
                                 set_file_modification_date=arguments['--set-file-mod-time'],
-                                strm_files=arguments['--strm-files'])
+                                create_strm_files=arguments['--strm'])
                             if downloaded_file:
                                 showlist.add_to_downloaded(item)
                                 if arguments['--post-download']:
