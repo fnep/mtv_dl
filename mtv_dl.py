@@ -67,7 +67,9 @@ Download options:
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
-
+  --series                              Mark the show as series in the nfo file, add season and 
+                                        episode information.
+  
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
 
@@ -80,12 +82,13 @@ Filters:
    '='  Pattern is a search within the field value. It's a case insensitive regular expression
         for the fields 'description', 'start', 'dow' (day of the week), 'hour', 'minute',
         'region', 'size', 'channel', 'topic', 'title', 'hash' and 'url'. For the fields
-        'duration' and 'age' it's a basic equality comparison.
+        'duration', 'age', 'episode', and 'season' it's a basic equality comparison.
 
    '!=' Inverse of the '=' operator.
 
    '+'  Pattern must be greater then the field value. Available for the fields 'duration',
-        'age', 'start', 'dow' (day of the week), 'hour', 'minute', and 'size'.
+        'age', 'start', 'dow' (day of the week), 'hour', 'minute', 'size', 'episode', and
+        'season'.
 
    '-'  Pattern must be less then the field value. Available for the same fields as for
         the '+' operator.
@@ -220,6 +223,7 @@ CONFIG_OPTIONS = {
     'verbose': bool,
     'post-download': str,
     'strm': bool,
+    'series' : bool,
 }
 
 HISTORY_DATABASE_FILE = '.History.sqlite'
@@ -323,6 +327,9 @@ class Database(object):
         duration: timedelta
         age: timedelta
         downloaded: Optional[datetime]
+        season: Optional[int]
+        episode: Optional[int]
+
 
     def database_file(self, schema: str = 'main') -> Path:
         cursor = self.connection.cursor()
@@ -358,7 +365,9 @@ class Database(object):
                     url_subtitles TEXT,
                     start TIMESTAMP,
                     duration TIMEDELTA,
-                    age TIMEDELTA
+                    age TIMEDELTA,
+                    season INTEGER,
+                    episode INTEGER
                 );
             """)
         except sqlite3.OperationalError:
@@ -383,7 +392,9 @@ class Database(object):
                 :url_subtitles,
                 :start,
                 :duration,
-                :age
+                :age,
+                :season,
+                :episode
             ) 
         """, self._get_shows())
 
@@ -397,9 +408,9 @@ class Database(object):
         return int(cursor.execute('PRAGMA history.user_version;').fetchone()[0])
 
     def initialize_history(self) -> None:
-        logger.info('Initializing History database in %r.', self.database_file('main'))
-        cursor = self.connection.cursor()
         if self.history_version == 0:
+            logger.info('Initializing History database in %r.', self.database_file('main'))
+            cursor = self.connection.cursor()
             cursor.execute("""
                 CREATE TABlE history.downloaded (
                     hash TEXT,
@@ -413,12 +424,24 @@ class Database(object):
                     start TIMESTAMP,
                     duration TIMEDELTA,
                     downloaded TIMESTAMP,
+                    season INTEGER,
+                    episode INTEGER
                     UNIQUE (hash)
                 );
             """)
-            cursor.execute('PRAGMA history.user_version=1')
-
-        self.connection.commit()
+            cursor.execute(f'PRAGMA history.user_version=2')
+        elif self.history_version == 1:       
+            logger.info('Upgrading history database schema, adding columns for season and episode')
+            # manually control transactions to make sure this schema upgrade is atomic
+            old_isolation_level = self.connection.isolation_level
+            self.connection.isolation_level = None
+            cursor = self.connection.cursor()
+            cursor.execute("BEGIN")
+            cursor.execute("ALTER TABLE history.downloaded ADD COLUMN season INTEGER")
+            cursor.execute("ALTER TABLE history.downloaded ADD COLUMN episode INTEGER")
+            cursor.execute(f'PRAGMA history.user_version=2')
+            cursor.execute("COMMIT")
+            self.connection.isolation_level = old_isolation_level
 
     def __init__(self, filmliste: Path, history: Path) -> None:
         logger.debug('Opening Filmliste database %r.', filmliste)
@@ -433,7 +456,7 @@ class Database(object):
                                         lambda expr, item: re.compile(expr, re.IGNORECASE).search(item) is not None)
         if self.filmliste_version == 0:
             self.initialize_filmliste()
-        if self.history_version == 0:
+        if self.history_version != 2:
             self.initialize_history()
 
     @staticmethod
@@ -554,6 +577,7 @@ class Database(object):
                                 start = datetime.fromtimestamp(0, tz=utc_zone) + timedelta(seconds=int(show['start']))
 
                                 duration = timedelta(seconds=self._duration_in_seconds(show['duration']))
+                                season, episode = _guess_series_details(title)
                                 yield {
                                     'hash': self._show_hash(channel, topic, title, size, start.replace(tzinfo=None)),
                                     'channel': channel,
@@ -571,6 +595,8 @@ class Database(object):
                                     'start': start.replace(tzinfo=None),
                                     'duration': duration,
                                     'age': now-start,
+                                    'season' : season,
+                                    'episode' : episode,
                                     'downloaded': None,
                                 }
 
@@ -598,7 +624,9 @@ class Database(object):
                     :website,
                     :start,
                     :duration,
-                    CURRENT_TIMESTAMP
+                    CURRENT_TIMESTAMP,
+                    :season,
+                    :episode
                 )
             """, show)
         except sqlite3.IntegrityError:
@@ -665,7 +693,7 @@ class Database(object):
 
                     if field not in ('description', 'region', 'size', 'channel',
                                      'topic', 'title', 'hash', 'url_http', 'duration', 'age', 'start',
-                                     'dow', 'hour', 'minute'):
+                                     'dow', 'hour', 'minute', 'season', 'episode'):
                         raise ConfigurationError('Invalid field %r.' % (field,))
 
                     if operator == '=':
@@ -687,6 +715,9 @@ class Database(object):
                             arguments.append(int(pattern))
                         elif field in ('minute'):
                             where.append("CAST(strftime('%M', show.start) AS INTEGER)=?")
+                            arguments.append(int(pattern))
+                        elif field in ( 'season', 'episode'):
+                            where.append(f"show.{field}=?")
                             arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
@@ -711,6 +742,9 @@ class Database(object):
                         elif field in ('minute'):
                             where.append("CAST(strftime('%M', show.start) AS INTEGER)!=?")
                             arguments.append(int(pattern))
+                        elif field in ( 'season', 'episode'):
+                            where.append(f"show.{field}!=?")
+                            arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
 
@@ -718,7 +752,7 @@ class Database(object):
                         if field in ('duration', 'age'):
                             where.append(f"show.{field}<=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
-                        elif field in ('size',):
+                        elif field in ('size', 'season', 'episode'):
                             where.append(f"show.{field}<=?")
                             arguments.append(int(pattern))
                         elif field == 'start':
@@ -740,7 +774,7 @@ class Database(object):
                         if field in ('duration', 'age'):
                             where.append(f"show.{field}>=?")
                             arguments.append(durationpy.from_str(pattern).total_seconds())
-                        elif field in ('size',):
+                        elif field in ('size', 'season', 'episode'):
                             where.append(f"show.{field}>=?")
                             arguments.append(int(pattern))
                         elif field == 'start':
@@ -795,11 +829,14 @@ class Database(object):
             yield dict(row)  # type: ignore
 
 
-def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = None) -> None:
+def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = None, series_mode: bool = False) -> None:
 
     def _escape_cell(title: str, obj: Any) -> str:
         if title == 'hash':
             return str(obj)[:11]
+        if title in ['episode' , 'season'] and obj is None:
+            # return empty string rather than "None" in these columns
+            return ""
         elif isinstance(obj, datetime):
             obj = obj.replace(tzinfo=utc_zone)
             try:
@@ -814,7 +851,8 @@ def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = No
         else:
             return str(obj)
 
-    headers = headers if isinstance(headers, list) else [
+    if not isinstance(headers, list):
+        headers = [
         'hash',
         'channel',
         'title',
@@ -825,6 +863,9 @@ def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = No
         'age',
         'region',
         'downloaded']
+
+        if series_mode:
+            headers.extend(['season', 'episode'])
 
     # noinspection PyTypeChecker
     table = Table(box=box.MINIMAL_DOUBLE_HEAD)
@@ -901,6 +942,8 @@ class Downloader:
             posix_target += '{ext}'
 
         escaped_show_details = {k: escape_path(str(v)) for k, v in self.show.items()}
+        escaped_show_details['season'] = "00" if self.show['season'] is None else f"{self.show['season']:02d}"
+        escaped_show_details['episode'] = "00" if self.show['episode'] is None else f"{self.show['episode']:02d}"
         destination_file_path = Path(posix_target.format(dir=cwd,
                                                          filename=file_name,
                                                          ext=file_extension,
@@ -1064,7 +1107,8 @@ class Downloader:
                  include_subtitles: bool = True,
                  include_nfo: bool = True,
                  set_file_modification_date: bool = False,
-                 create_strm_files: bool = False
+                 create_strm_files: bool = False,               
+                 series_mode : bool = False
                  ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
         try:
@@ -1125,7 +1169,8 @@ class Downloader:
                 self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, '.srt', 'subtitles')
 
             if include_nfo:
-                nfo_movie = ET.fromstring('<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><movie/>')
+                root_node = "movie" if not series_mode else "episodedetails"
+                nfo_movie = ET.fromstring(f'<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><{root_node}/>')
                 nfo_id = ET.SubElement(nfo_movie, 'uniqueid')
                 nfo_id.set('type', 'hash')
                 nfo_id.text = self.show['hash']
@@ -1136,6 +1181,9 @@ class Downloader:
                 if self.show['start']:
                     ET.SubElement(nfo_movie, 'aired').text = self.show['start'].isoformat()
                 ET.SubElement(nfo_movie, 'country').text = self.show['region']
+                if series_mode and self.show['season'] is not None and self.show['episode'] is not None:
+                    ET.SubElement(nfo_movie, 'season').text = str(self.show['season'])
+                    ET.SubElement(nfo_movie, 'episode').text = str(self.show['episode'])
 
                 with NamedTemporaryFile(mode='wb', prefix='.tmp', dir=temp_path, delete=False) as out_fh:
                     nfo_path = Path(temp_path) / out_fh.name
@@ -1152,6 +1200,103 @@ class Downloader:
             shutil.rmtree(temp_path)
 
         return None
+
+def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional[int], Optional[int]]: 
+    """Heuristics to extract season and episode information from the title.
+    
+    Examples with season and episode information:
+        >>> _guess_series_details("Folge 4: Mehr als eine Entscheidung (S01/E04) - Audiodeskription")
+        (1, 4)
+        >>> _guess_series_details("Können wir das Pferd retten? (Staffel 33 Folge 10) ")
+        (33, 10)
+        >>> _guess_series_details("Hörfassung: Folge 3: Besuch aus dem Jenseits - Staffel 5")
+        (5, 3)
+        >>> _guess_series_details("Nr. 47  | Episode 3 von 4 | Staffel 1")
+        (1, 3)
+
+    Examples without season information:
+        >>> _guess_series_details("#45 Trostloser VfB-Auftritt in Dortmund")
+        (1, 45)
+        
+        expect the tool to find the first pattern if multiple are present
+        >>> _guess_series_details("StarStarSpace #23/Japanoschlampen #34 - Die verschollene Episode")
+        (1, 23)
+        >>> _guess_series_details("Folge 7 (OmU) - Originalfassung mit deutschen Untertiteln")
+        (1, 7)
+        
+        prefer "12. Folge" over "(1)"        
+        >>> _guess_series_details("Rückblick: 12. Folge - Zwillingszauber (1)")
+        (1, 12)
+        >>> _guess_series_details("Folge 9 ")
+        (1, 9)
+        
+        don't trigger on the "#delikat" prefix
+        >>> _guess_series_details("#delikatdelikat Folge 06 - Late Night Alter")
+        (1, 6)
+        
+        ignore the 36, as this is the total number of episodes
+        >>> _guess_series_details("Folge 11/36")
+        (1, 11)
+        >>> _guess_series_details('Gipfeltour (4/5) | Serie "Nix wie raus …. Madeira"')
+        (1, 4)
+        >>> _guess_series_details("Leichter leben (10) | Partnervermittlung für ältere Menschen")
+        (1, 10)
+        >>> _guess_series_details("Episode 5 - Eine Serie von Natalie Scharf")
+        (1, 5)
+        >>> _guess_series_details("Episode 3245")
+        (1, 3245)
+        >>> _guess_series_details("Helvetica (Episode 2 von 6)")
+        (1, 2)
+
+    Examples of titles that cannot be parsed:
+        >>> _guess_series_details("Krieg in Europa: Tag 14")
+        (None, None)
+        >>> _guess_series_details("Der 13. Tag")
+        (None, None)
+        >>> _guess_series_details("Songwriterin des Jahres 2017")
+        (None, None)
+    """
+    # Patterns that contain a season number.
+    # Using "S" to identify the season and "E" to identify the episode in the regex
+    # as the order of these changes.
+    season_patterns = [
+        # "(S01/E01)"
+        re.compile(r"\(S(?P<S>\d+)/E(?P<E>\d+)\)"),
+        # "Staffel 01" "Folge 01"
+        re.compile(r"Staffel (?P<S>\d+).*Folge (?P<E>\d+)"),
+        # "Folge 01" "Staffel 01", different order
+        re.compile(r"Folge (?P<E>\d+).*Staffel (?P<S>\d+)"),
+    ]
+
+    # Patterns that recognize episodes only.
+    episode_patterns = [
+        # "Folge 3" 
+        re.compile(r"Folge (\d+)"),
+        # "Episode 3"
+        re.compile(r"Episode (\d+)"),
+        # "7. Folge"
+        re.compile(r"(\d+)\. Folge"),
+        # "7. Episode"
+        re.compile(r"(\d+)\. Episode"),
+        # "(12)"
+        re.compile(r"\((\d+)\)"),
+        # "(3/5)", where 3 is the episode and 5 is the total number of episodes
+        re.compile(r"\((\d+)/\d+\)"),
+        # "#45"
+        re.compile(r"#(\d+)"),
+    ]
+
+    for pattern in season_patterns:
+        m = pattern.search(title)
+        if m is not None:
+            return int(m["S"]), int(m["E"])
+    
+    for pattern in episode_patterns:
+        m = pattern.search(title)
+        if m is not None:
+            return manual_season, int(m.group(1))
+       
+    return None, None
 
 
 def run_post_download_hook(executable: Path, item: Database.Item, downloaded_file: Path) -> None:
@@ -1173,6 +1318,8 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
                            "MTV_DL_WEBSITE":  item['website'],
                            "MTV_DL_START":  item['start'].isoformat(),
                            "MTV_DL_DURATION":  str(item['duration'].total_seconds()),
+                           "MTV_DL_SEASON":  item['season'],
+                           "MTV_DL_EPISODE":  item['episode'],
                        },
                        encoding="utf-8")
     except subprocess.CalledProcessError as e:
@@ -1291,7 +1438,7 @@ def main() -> None:
             elif arguments['--remove']:
                 showlist.remove_from_downloaded(show_hash=arguments['--remove'])
             else:
-                show_table(showlist.downloaded())
+                show_table(showlist.downloaded(), series_mode=True)
 
         else:
 
@@ -1302,9 +1449,9 @@ def main() -> None:
                             for filter_set
                             in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
                                                                          if arguments['--sets'] else None),
-                                                         default_filter=arguments['<filter>'])))
+                                                         default_filter=arguments['<filter>'])))           
             if arguments['list']:
-                show_table(shows)
+                show_table(shows, series_mode=True)
 
             elif arguments['dump']:
                 print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))
@@ -1326,7 +1473,8 @@ def main() -> None:
                                 include_subtitles=not arguments['--no-subtitles'],
                                 include_nfo=not arguments['--no-nfo'],
                                 set_file_modification_date=arguments['--set-file-mod-time'],
-                                create_strm_files=arguments['--strm'])
+                                create_strm_files=arguments['--strm'],
+                                series_mode=arguments['--series'])
                             if downloaded_file:
                                 showlist.add_to_downloaded(item)
                                 if arguments['--post-download']:
