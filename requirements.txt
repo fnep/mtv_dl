@@ -6,3 +6,6 @@ ijson
 iso8601
 PyYAML
 rich
+typing-extensions
+ijson
+pytest
