@@ -3,6 +3,7 @@ docopt
 pydash
 rich
 durationpy>=0.5
+pyrfc6266
 PyYAML
 beautifulsoup4
 certifi

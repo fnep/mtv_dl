@@ -142,7 +142,6 @@ Config file:
 
  """
 
-import cgi
 import hashlib
 import http.client
 import json
@@ -864,13 +863,7 @@ class Downloader:
                 progress.update(bar_id, total=sum(file_sizes) / len(file_sizes) * len(target_urls))
 
                 # determine file name and destination
-                default_filename = os.path.basename(url)
-                if response.getheader('content-disposition'):
-                    cd_value, cd_header = cgi.parse_header(response.getheader('content-disposition'))
-                    file_name = cd_header.get('filename', default_filename)
-                else:
-                    file_name = default_filename
-                destination_file_path = destination_dir_path / escape_path(file_name)
+                destination_file_path = destination_dir_path / escape_path(os.path.basename(url) or "unknown")
 
                 # actual download
                 with destination_file_path.open('wb') as fh:
@@ -886,7 +879,6 @@ class Downloader:
 
     def _create_strm_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
 
-        file_sizes = []
         for url in target_urls:
 
             file_name = os.path.splitext(os.path.basename(url))[0]+'.strm'
@@ -1242,16 +1234,28 @@ def main() -> None:
     arguments = load_config(arguments)
 
     # ISO8601 logger
-    if arguments['--logfile']:
-        logging_handler = logging.FileHandler(Path(arguments['--logfile']).expanduser(), encoding='utf-8')
-        logging_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
-                                                       "%Y-%m-%dT%H:%M:%S%z"))
+    if arguments["--logfile"]:
+        logging_handler: logging.Handler = logging.FileHandler(
+            Path(arguments["--logfile"]).expanduser(), encoding="utf-8"
+        )
+        logging_handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s %(levelname)-8s %(message)s",
+                datefmt="%Y-%m-%dT%H:%M:%S%z",
+            )
+        )
     else:
-        logging_handler = RichHandler(console=console, show_path=False, omit_repeated_times=False)
+        logging_handler = RichHandler(
+            console=console,
+            show_path=False,
+            omit_repeated_times=False,
+        )
         logging_handler.setFormatter(logging.Formatter(datefmt="%Y-%m-%dT%H:%M:%S%z "))
 
     logger.addHandler(logging_handler)
-    sys.excepthook = lambda _c, _e, _t: logger.critical('%s: %s\n%s', _c, _e, ''.join(traceback.format_tb(_t)))
+    sys.excepthook = lambda _c, _e, _t: logger.critical(
+        "%s: %s\n%s", _c, _e, "".join(traceback.format_tb(_t))
+    )
 
     # progressbar handling
     global HIDE_PROGRESSBAR
