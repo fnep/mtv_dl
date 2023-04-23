@@ -186,7 +186,6 @@ import durationpy
 import iso8601
 import yaml
 from bs4 import BeautifulSoup
-from pydash import py_
 from rich import box
 from rich.console import Console
 from rich.logging import RichHandler
@@ -950,12 +949,14 @@ class Downloader:
                              base_url: str,
                              quality_preference: Tuple[str, str, str]) -> Path:
 
-        hls_index_segments = py_ \
-            .chain(m3u8_segments) \
-            .filter(lambda s: 'mp4a' not in s.get('codecs')) \
-            .filter(lambda s: s.get('bandwidth')) \
-            .sort(key=lambda s: s.get('bandwidth')) \
-            .value()
+        hls_index_segments = sorted(
+            [
+                s
+                for s in m3u8_segments
+                if "mp4a" not in s.get("codecs", {}) and s.get("bandwidth")
+            ],
+            key=lambda s: s.get("bandwidth", 0),
+        )
 
         # select the wanted stream
         if quality_preference[0] == '_hd':
