@@ -8,7 +8,5 @@
 /MANIFEST
 /build
 /mtv_dl.egg-info
-/Pipfile.lock
-/poetry.lock
 /.python-version
 /.venv
