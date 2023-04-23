@@ -870,7 +870,7 @@ class Downloader:
                     file_name = cd_header.get('filename', default_filename)
                 else:
                     file_name = default_filename
-                destination_file_path = destination_dir_path / file_name
+                destination_file_path = destination_dir_path / escape_path(file_name)
 
                 # actual download
                 with destination_file_path.open('wb') as fh:
