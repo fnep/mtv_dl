@@ -416,7 +416,7 @@ class Database(object):
                     UNIQUE (hash)
                 );
             """)
-            cursor.execute(f'PRAGMA history.user_version=1')
+            cursor.execute('PRAGMA history.user_version=1')
 
         self.connection.commit()
 
@@ -680,13 +680,13 @@ class Database(object):
                             where.append(f"show.{field}=?")
                             arguments.append(iso8601.parse_date(pattern).isoformat())
                         elif field in ('dow'):
-                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)=?")
+                            where.append("CAST(strftime('%w', show.start) AS INTEGER)=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)=?")
+                            where.append("CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
-                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)=?")
+                            where.append("CAST(strftime('%M', show.start) AS INTEGER)=?")
                             arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
@@ -703,13 +703,13 @@ class Database(object):
                             where.append(f"show.{field}!=?")
                             arguments.append(iso8601.parse_date(pattern).isoformat())
                         elif field in ('dow'):
-                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)!=?")
+                            where.append("CAST(strftime('%w', show.start) AS INTEGER)!=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)!=?")
+                            where.append("CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)!=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
-                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)!=?")
+                            where.append("CAST(strftime('%M', show.start) AS INTEGER)!=?")
                             arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
@@ -725,13 +725,13 @@ class Database(object):
                             where.append(f"show.{field}<=?")
                             arguments.append(iso8601.parse_date(pattern))
                         elif field in ('dow'):
-                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)<=?")
+                            where.append("CAST(strftime('%w', show.start) AS INTEGER)<=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)<=?")
+                            where.append("CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)<=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
-                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)<=?")
+                            where.append("CAST(strftime('%M', show.start) AS INTEGER)<=?")
                             arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))
@@ -747,13 +747,13 @@ class Database(object):
                             where.append(f"show.{field}>=?")
                             arguments.append(iso8601.parse_date(pattern))
                         elif field in ('dow'):
-                            where.append(f"CAST(strftime('%w', show.start) AS INTEGER)>=?")
+                            where.append("CAST(strftime('%w', show.start) AS INTEGER)>=?")
                             arguments.append(int(pattern))
                         elif field in ('hour'):
-                            where.append(f"CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)>=?")
+                            where.append("CAST(strftime('%H', datetime(show.start, 'localtime')) AS INTEGER)>=?")
                             arguments.append(int(pattern))
                         elif field in ('minute'):
-                            where.append(f"CAST(strftime('%M', show.start) AS INTEGER)>=?")
+                            where.append("CAST(strftime('%M', show.start) AS INTEGER)>=?")
                             arguments.append(int(pattern))
                         else:
                             raise ConfigurationError('Invalid operator %r for %r.' % (operator, field))

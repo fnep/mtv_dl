@@ -33,6 +33,8 @@ types-PyYAML = "^6.0.12.9"
 types-certifi = "^2021.10.8.3"
 pytest = "^7.3.1"
 pytest-mypy = "^0.10.3"
+ruff = "^0.0.262"
+pytest-ruff = "^0.0.5"
 
 [tool.poetry.scripts]
 mtv_dl = 'mtv_dl:main'
@@ -41,6 +43,9 @@ mtv_dl = 'mtv_dl:main'
 enable = true
 pattern = '^v(?P<base>\d+\.\d+)'
 format = '{base}.{distance}'
+
+[tool.ruff]
+line-length = 120
 
 [build-system]
 requires = ["poetry>=1.0.2", "poetry-dynamic-versioning"]
