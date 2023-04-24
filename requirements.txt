@@ -1,10 +1,8 @@
-iso8601
-docopt
-pydash
-rich
-durationpy>=0.5
-pyrfc6266
-PyYAML
 beautifulsoup4
 certifi
-typing-extensions
+docopt
+durationpy
+ijson
+iso8601
+PyYAML
+rich
