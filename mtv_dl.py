@@ -509,7 +509,7 @@ class Database(object):
         header: List[str] = []
         channel, topic, region = '', '', ''
         with self._showlist() as showlist_archive:
-            with lzma.open(showlist_archive, 'rt', encoding='utf-8') as fh:
+            with lzma.open(showlist_archive, 'rb') as fh:
                 logger.debug('Loading database items.')
 
                 # this will loop one time over the whole json for the sole purpose of counting
