@@ -9,3 +9,6 @@ rich
 typing-extensions
 ijson
 pytest
+pytest-ruff
+pytest-mypy
+types-PyYAML
