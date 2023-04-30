@@ -205,7 +205,7 @@ __version__ = "0.0.0"
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
-CAFILE = None
+CAFILE = None # type: Optional[str]
 DEFAULT_CONFIG_FILE = Path('~/.mtv_dl.yml')
 CONFIG_OPTIONS = {
     'count': int,
@@ -429,7 +429,7 @@ class Database(object):
                     UNIQUE (hash)
                 );
             """)
-            cursor.execute(f'PRAGMA history.user_version=2')
+            cursor.execute('PRAGMA history.user_version=2')
         elif self.history_version == 1:       
             logger.info('Upgrading history database schema, adding columns for season and episode')
             # manually control transactions to make sure this schema upgrade is atomic
@@ -439,7 +439,7 @@ class Database(object):
             cursor.execute("BEGIN")
             cursor.execute("ALTER TABLE history.downloaded ADD COLUMN season INTEGER")
             cursor.execute("ALTER TABLE history.downloaded ADD COLUMN episode INTEGER")
-            cursor.execute(f'PRAGMA history.user_version=2')
+            cursor.execute('PRAGMA history.user_version=2')
             cursor.execute("COMMIT")
             self.connection.isolation_level = old_isolation_level
 
@@ -1318,8 +1318,8 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
                            "MTV_DL_WEBSITE":  item['website'],
                            "MTV_DL_START":  item['start'].isoformat(),
                            "MTV_DL_DURATION":  str(item['duration'].total_seconds()),
-                           "MTV_DL_SEASON":  item['season'],
-                           "MTV_DL_EPISODE":  item['episode'],
+                           "MTV_DL_SEASON":  str(item['season']),
+                           "MTV_DL_EPISODE":  str(item['episode']),
                        },
                        encoding="utf-8")
     except subprocess.CalledProcessError as e:

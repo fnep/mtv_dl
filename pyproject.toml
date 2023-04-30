@@ -46,6 +46,7 @@ format = '{base}.{distance}'
 
 [tool.ruff]
 line-length = 120
+exclude = [".venv"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
