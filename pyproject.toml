@@ -44,6 +44,12 @@ enable = true
 pattern = '^v(?P<base>\d+\.\d+)'
 format = '{base}.{distance}'
 
+[tool.mypy]
+warn_unused_ignore = true
+
+[tool.black]
+line-length = 120
+
 [tool.ruff]
 line-length = 120
 target-version = "py38"

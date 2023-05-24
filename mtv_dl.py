@@ -205,7 +205,7 @@ __version__ = "0.0.0"
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
-CAFILE = None # type: Optional[str]
+CAFILE: Optional[str] = None
 DEFAULT_CONFIG_FILE = Path("~/.mtv_dl.yml")
 CONFIG_OPTIONS = {
     "count": int,
@@ -223,7 +223,7 @@ CONFIG_OPTIONS = {
     "verbose": bool,
     "post-download": str,
     "strm": bool,
-    "series" : bool,
+    "series": bool,
 }
 
 HISTORY_DATABASE_FILE = ".History.sqlite"
@@ -253,18 +253,21 @@ console = Console()
 def progress_bar() -> Iterator[Progress]:
     progress_console = console
     if HIDE_PROGRESSBAR:
-        progress_console = Console(file=open(os.devnull, 'w'))  # noqa
-    with Progress(TextColumn("[bold blue]{task.description}", justify="right"),
-                  BarColumn(bar_width=None),
-                  "[progress.percentage]{task.percentage:>3.1f}%",
-                  TimeRemainingColumn(),
-                  refresh_per_second=4,
-                  console=progress_console) as progress:
+        progress_console = Console(file=open(os.devnull, "w"))  # noqa
+    with Progress(
+        TextColumn("[bold blue]{task.description}", justify="right"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.1f}%",
+        TimeRemainingColumn(),
+        refresh_per_second=4,
+        console=progress_console,
+    ) as progress:
         yield progress
 
 
 class ConfigurationError(Exception):
     pass
+
 
 class RetryLimitExceededError(Exception):
     pass
@@ -284,7 +287,6 @@ def escape_path(s: str) -> str:
 
 
 class Database:
-
     # noinspection SpellCheckingInspection
     TRANSLATION = {
         "Beschreibung": "description",
@@ -306,7 +308,7 @@ class Database:
         "Url Untertitel": "url_subtitles",
         "Website": "website",
         "Zeit": "time",
-        "neu": "new"
+        "neu": "new",
     }
 
     class Item(TypedDict):
@@ -330,7 +332,6 @@ class Database:
         season: Optional[int]
         episode: Optional[int]
 
-
     def database_file(self, schema: str = "main") -> Path:
         cursor = self.connection.cursor()
         database_index = {db[1]: db[2] for db in cursor.execute("PRAGMA database_list")}
@@ -348,7 +349,8 @@ class Database:
         logger.debug("Initializing Filmliste database in %r.", self.database_file("main"))
         cursor = self.connection.cursor()
         try:
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABlE main.show (
                     hash TEXT,
                     channel TEXT,
@@ -369,12 +371,14 @@ class Database:
                     season INTEGER,
                     episode INTEGER
                 );
-            """)
+                """
+            )
         except sqlite3.OperationalError:
             cursor.execute("DELETE FROM main.show")
 
         # get show data
-        cursor.executemany("""
+        cursor.executemany(
+            """
             INSERT INTO main.show
             VALUES (
                 :hash,
@@ -396,7 +400,9 @@ class Database:
                 :season,
                 :episode
             )
-        """, self._get_shows())
+            """,
+            self._get_shows(),
+        )
 
         cursor.execute(f"PRAGMA user_version={int(now.timestamp())}")
 
@@ -411,7 +417,8 @@ class Database:
         if self.history_version == 0:
             logger.info("Initializing History database in %r.", self.database_file("main"))
             cursor = self.connection.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABlE history.downloaded (
                     hash TEXT,
                     channel TEXT,
@@ -428,7 +435,8 @@ class Database:
                     episode INTEGER
                     UNIQUE (hash)
                 );
-            """)
+                """
+            )
             cursor.execute("PRAGMA history.user_version=2")
         elif self.history_version == 1:
             logger.info("Upgrading history database schema, adding columns for season and episode")
@@ -445,15 +453,20 @@ class Database:
 
     def __init__(self, filmliste: Path, history: Path) -> None:
         logger.debug("Opening Filmliste database %r.", filmliste)
-        self.connection = sqlite3.connect(filmliste.absolute().as_posix(),
-                                          detect_types=sqlite3.PARSE_DECLTYPES,
-                                          timeout=10)
+        self.connection = sqlite3.connect(
+            filmliste.absolute().as_posix(),
+            detect_types=sqlite3.PARSE_DECLTYPES,
+            timeout=10,
+        )
         logger.debug("Opening History database %r.", history)
         self.connection.cursor().execute("ATTACH ? AS history", (history.as_posix(),))
 
         self.connection.row_factory = sqlite3.Row
-        self.connection.create_function("REGEXP", 2,
-                                        lambda expr, item: re.compile(expr, re.IGNORECASE).search(item) is not None)
+        self.connection.create_function(
+            "REGEXP",
+            2,
+            lambda expr, item: re.compile(expr, re.IGNORECASE).search(item) is not None,
+        )
         if self.filmliste_version == 0:
             self.initialize_filmliste()
         if self.history_version != 2:
@@ -464,7 +477,7 @@ class Database:
         if extension:
             if "|" in extension:
                 offset, text = extension.split("|", maxsplit=1)
-                return basis[:int(offset)] + text
+                return basis[: int(offset)] + text
             else:
                 return basis + extension
         else:
@@ -476,9 +489,13 @@ class Database:
             match = re.match(r"(?P<h>\d+):(?P<m>\d+):(?P<s>\d+)", duration)
             if match:
                 parts = match.groupdict()
-                return int(timedelta(hours=int(parts["h"]),
-                                     minutes=int(parts["m"]),
-                                     seconds=int(parts["s"])).total_seconds())
+                return int(
+                    timedelta(
+                        hours=int(parts["h"]),
+                        minutes=int(parts["m"]),
+                        seconds=int(parts["s"]),
+                    ).total_seconds()
+                )
         return 0
 
     @staticmethod
@@ -504,9 +521,7 @@ class Database:
                 total_size = int(response.getheader("content-length") or 0)
                 with BytesIO() as buffer:
                     with progress_bar() as progress:
-                        bar_id = progress.add_task(
-                            total=total_size,
-                            description="Downloading database")
+                        bar_id = progress.add_task(total=total_size, description="Downloading database")
                         while True:
                             data = response.read(CHUNK_SIZE)
                             if not data:
@@ -541,9 +556,7 @@ class Database:
                 fh.seek(0)
 
             with progress_bar() as progress:
-                bar_id = progress.add_task(
-                    total=items_count,
-                    description="Reading database items")
+                bar_id = progress.add_task(total=items_count, description="Reading database items")
                 for p in ijson.kvitems(fh, ""):
                     progress.update(bar_id, advance=1)
                     if not meta and p[0] == "Filmliste":
@@ -592,9 +605,9 @@ class Database:
                                 "url_subtitles": show["url_subtitles"],
                                 "start": start.replace(tzinfo=None),
                                 "duration": duration,
-                                "age": now-start,
-                                "season" : season,
-                                "episode" : episode,
+                                "age": now - start,
+                                "season": season,
+                                "episode": episode,
                                 "downloaded": None,
                             }
 
@@ -609,7 +622,8 @@ class Database:
     def add_to_downloaded(self, show: "Database.Item") -> None:
         cursor = self.connection.cursor()
         with suppress(sqlite3.IntegrityError):
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO history.downloaded
                 VALUES(
                     :hash,
@@ -626,7 +640,9 @@ class Database:
                     :season,
                     :episode
                 )
-            """, show)
+                """,
+                show,
+            )
 
         self.connection.commit()
 
@@ -666,11 +682,12 @@ class Database:
         else:
             yield default_filter
 
-    def filtered(self,
-                 rules: List[str],
-                 include_future: bool = False,
-                 limit: Optional[int] = None) -> Iterator["Database.Item"]:
-
+    def filtered(
+        self,
+        rules: List[str],
+        include_future: bool = False,
+        limit: Optional[int] = None,
+    ) -> Iterator["Database.Item"]:
         where = []
         arguments: List[Any] = []
         if rules:
@@ -679,23 +696,37 @@ class Database:
             for f in rules:
                 match = re.match(r"^(?P<field>\w+)(?P<operator>(?:=|!=|\+|-|\W+))(?P<pattern>.*)$", f)
                 if match:
-                    field, operator, pattern = match.group("field"), \
-                                               match.group("operator"), \
-                                               match.group("pattern")  # type: str, str, Any
+                    field, operator, pattern = (
+                        match.group("field"),
+                        match.group("operator"),
+                        match.group("pattern"),
+                    )  # type: str, str, Any
 
                     # replace odd names
-                    field = {
-                        "url": "url_http"
-                    }.get(field, field)
+                    field = {"url": "url_http"}.get(field, field)
 
-                    if field not in ("description", "region", "size", "channel",
-                                     "topic", "title", "hash", "url_http", "duration", "age", "start",
-                                     "dow", "hour", "minute", "season", "episode"):
+                    if field not in (
+                        "description",
+                        "region",
+                        "size",
+                        "channel",
+                        "topic",
+                        "title",
+                        "hash",
+                        "url_http",
+                        "duration",
+                        "age",
+                        "start",
+                        "dow",
+                        "hour",
+                        "minute",
+                        "season",
+                        "episode",
+                    ):
                         raise ConfigurationError(f"Invalid field {field!r}.")
 
                     if operator == "=":
-                        if field in ("description", "region", "size", "channel",
-                                     "topic", "title", "hash", "url_http"):
+                        if field in ("description", "region", "size", "channel", "topic", "title", "hash", "url_http"):
                             where.append(f"show.{field} REGEXP ?")
                             arguments.append(str(pattern))
                         elif field in ("duration", "age"):
@@ -713,15 +744,14 @@ class Database:
                         elif field in ("minute"):
                             where.append("CAST(strftime('%M', show.start) AS INTEGER)=?")
                             arguments.append(int(pattern))
-                        elif field in ( "season", "episode"):
+                        elif field in ("season", "episode"):
                             where.append(f"show.{field}=?")
                             arguments.append(int(pattern))
                         else:
                             raise ConfigurationError(f"Invalid operator {operator!r} for {field!r}.")
 
                     elif operator == "!=":
-                        if field in ("description", "region", "size", "channel",
-                                     "topic", "title", "hash", "url_http"):
+                        if field in ("description", "region", "size", "channel", "topic", "title", "hash", "url_http"):
                             where.append(f"show.{field} NOT REGEXP ?")
                             arguments.append(str(pattern))
                         elif field in ("duration", "age"):
@@ -739,7 +769,7 @@ class Database:
                         elif field in ("minute"):
                             where.append("CAST(strftime('%M', show.start) AS INTEGER)!=?")
                             arguments.append(int(pattern))
-                        elif field in ( "season", "episode"):
+                        elif field in ("season", "episode"):
                             where.append(f"show.{field}!=?")
                             arguments.append(int(pattern))
                         else:
@@ -793,8 +823,7 @@ class Database:
                         raise ConfigurationError("Invalid operator: %r" % operator)
 
                 else:
-                    raise ConfigurationError("Invalid filter definition. "
-                                             "Property and filter rule expected separated by an operator.")
+                    raise ConfigurationError("Property and filter rule expected to be separated by an operator.")
 
         if not include_future:
             where.append("datetime(show.start) < datetime('now')")
@@ -817,21 +846,22 @@ class Database:
 
     def downloaded(self) -> Iterator["Database.Item"]:
         cursor = self.connection.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT *
             FROM history.downloaded
             ORDER BY downloaded
-        """)
+            """
+        )
         for row in cursor:
             yield dict(row)  # type: ignore
 
 
 def show_table(shows: Iterable[Database.Item]) -> None:
-
     def _escape_cell(title: str, obj: Any) -> str:
         if title == "hash":
             return str(obj)[:11]
-        if title in ["episode" , "season"] and obj is None:
+        if title in ["episode", "season"] and obj is None:
             # return empty string rather than "None" in these columns
             return ""
         elif isinstance(obj, datetime):
@@ -870,6 +900,7 @@ def show_table(shows: Iterable[Database.Item]) -> None:
 
 
 class Downloader:
+    """Download a show from the internet."""
 
     Quality = Literal["url_http", "url_http_hd", "url_http_small"]
 
@@ -881,14 +912,11 @@ class Downloader:
         return "{title!r} ({channel}, {topic!r}, {start}, {hash:.11})".format(**self.show)
 
     def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
-
         file_sizes = []
         with progress_bar() as progress:
-            bar_id = progress.add_task(
-                description=f"Downloading {self.label}")
+            bar_id = progress.add_task(description=f"Downloading {self.label}")
 
             for url in target_urls:
-
                 response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=60, cafile=CAFILE)
 
                 # determine file size for progressbar
@@ -911,9 +939,7 @@ class Downloader:
                 yield destination_file_path
 
     def _create_strm_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
-
         for url in target_urls:
-
             file_name = Path(url).with_suffix(".strm").name
             destination_file_path = destination_dir_path / file_name
 
@@ -922,14 +948,15 @@ class Downloader:
 
         yield destination_file_path
 
-    def _move_to_user_target(self,
-                             source_path: Path,
-                             cwd: Path,
-                             target: Path,
-                             file_name: str,
-                             file_extension: str,
-                             media_type: str) -> Union[Literal[False], Path]:
-
+    def _move_to_user_target(
+        self,
+        source_path: Path,
+        cwd: Path,
+        target: Path,
+        file_name: str,
+        file_extension: str,
+        media_type: str,
+    ) -> Union[Literal[False], Path]:
         posix_target = target.as_posix()
         if "{ext}" not in posix_target:
             posix_target += "{ext}"
@@ -937,12 +964,16 @@ class Downloader:
         escaped_show_details = {k: escape_path(str(v)) for k, v in self.show.items()}
         escaped_show_details["season"] = "00" if self.show["season"] is None else f"{self.show['season']:02d}"
         escaped_show_details["episode"] = "00" if self.show["episode"] is None else f"{self.show['episode']:02d}"
-        destination_file_path = Path(posix_target.format(dir=cwd,
-                                                         filename=file_name,
-                                                         ext=file_extension,
-                                                         date=self.show["start"].date().isoformat(),
-                                                         time=self.show["start"].strftime("%H-%M"),
-                                                         **escaped_show_details))
+        destination_file_path = Path(
+            posix_target.format(
+                dir=cwd,
+                filename=file_name,
+                ext=file_extension,
+                date=self.show["start"].date().isoformat(),
+                time=self.show["start"].strftime("%H-%M"),
+                **escaped_show_details,
+            )
+        )
 
         destination_file_path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -957,7 +988,6 @@ class Downloader:
 
     @staticmethod
     def _get_m3u8_segments(base_url: str, m3u8_file_path: Path) -> Iterator[Dict[str, Any]]:
-
         with m3u8_file_path.open("r+", encoding="utf-8") as fh:
             segment: Dict[str, Any] = {}
             for line in fh:
@@ -978,18 +1008,15 @@ class Downloader:
                     yield segment
                     segment = {}
 
-    def _download_hls_target(self,
-                             m3u8_segments: List[Dict[str, Any]],
-                             temp_dir_path: Path,
-                             base_url: str,
-                             quality_preference: Tuple[str, str, str]) -> Path:
-
+    def _download_hls_target(
+        self,
+        m3u8_segments: List[Dict[str, Any]],
+        temp_dir_path: Path,
+        base_url: str,
+        quality_preference: Tuple[str, str, str],
+    ) -> Path:
         hls_index_segments = sorted(
-            [
-                s
-                for s in m3u8_segments
-                if "mp4a" not in s.get("codecs", {}) and s.get("bandwidth")
-            ],
+            [s for s in m3u8_segments if "mp4a" not in s.get("codecs", {}) and s.get("bandwidth")],
             key=lambda s: s.get("bandwidth", 0),
         )
 
@@ -1002,9 +1029,11 @@ class Downloader:
             designated_index_segment = hls_index_segments[len(hls_index_segments) // 2]
 
         designated_index_file = list(self._download_files(temp_dir_path, [designated_index_segment["url"]]))[0]
-        logger.debug("Selected HLS bandwidth is %d (available: %s).",
-                     designated_index_segment["bandwidth"],
-                     ", ".join(str(s["bandwidth"]) for s in hls_index_segments))
+        logger.debug(
+            "Selected HLS bandwidth is %d (available: %s).",
+            designated_index_segment["bandwidth"],
+            ", ".join(str(s["bandwidth"]) for s in hls_index_segments),
+        )
 
         # get stream segments
         hls_target_segments = list(self._get_m3u8_segments(base_url, designated_index_file))
@@ -1015,7 +1044,6 @@ class Downloader:
         with NamedTemporaryFile(mode="wb", prefix=".tmp", dir=temp_dir_path, delete=False) as out_fh:
             temp_file_path = Path(temp_dir_path) / out_fh.name
             for segment_file_path in hls_target_files:
-
                 with segment_file_path.open("rb") as in_fh:
                     out_fh.write(in_fh.read())
 
@@ -1025,7 +1053,6 @@ class Downloader:
         return temp_file_path
 
     def _download_m3u8_target(self, m3u8_segments: List[Dict[str, Any]], temp_dir_path: Path) -> Path:
-
         # get segments
         hls_target_files = self._download_files(temp_dir_path, list(s["url"] for s in m3u8_segments))
         logger.debug("%d m3u8 segments to download.", len(m3u8_segments))
@@ -1035,7 +1062,6 @@ class Downloader:
             temp_file_path = Path(temp_dir_path) / out_fh.name
 
             for segment_file_path in hls_target_files:
-
                 with segment_file_path.open("rb") as in_fh:
                     out_fh.write(in_fh.read())
 
@@ -1046,7 +1072,6 @@ class Downloader:
 
     @staticmethod
     def _convert_subtitles_xml_to_srt(subtitles_xml_path: Path) -> Path:
-
         subtitles_srt_path = subtitles_xml_path.parent / (subtitles_xml_path.stem + ".srt")
         soup = BeautifulSoup(subtitles_xml_path.read_text(encoding="utf-8"), "html.parser")
 
@@ -1091,24 +1116,22 @@ class Downloader:
 
         return subtitles_srt_path
 
-    def download(self,
-                 quality: Tuple[Quality, Quality, Quality],
-                 cwd: Path,
-                 target: Path,
-                 *,
-                 include_subtitles: bool = True,
-                 include_nfo: bool = True,
-                 set_file_modification_date: bool = False,
-                 create_strm_files: bool = False,
-                 series_mode : bool = False
-                 ) -> Optional[Path]:
+    def download(
+        self,
+        quality: Tuple[Quality, Quality, Quality],
+        cwd: Path,
+        target: Path,
+        *,
+        include_subtitles: bool = True,
+        include_nfo: bool = True,
+        set_file_modification_date: bool = False,
+        create_strm_files: bool = False,
+        series_mode: bool = False,
+    ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix=".tmp"))
         try:
-
             # show url based on quality preference
-            show_url = self.show[quality[0]] \
-                       or self.show[quality[1]] \
-                       or self.show[quality[2]]
+            show_url = self.show[quality[0]] or self.show[quality[1]] or self.show[quality[2]]
 
             if not show_url:
                 logger.error("No valid url to download %r", self.label)
@@ -1117,15 +1140,18 @@ class Downloader:
             logger.debug("Downloading %s from %r.", self.label, show_url)
 
             if not create_strm_files:
-                show_file_path = list(
-                    self._download_files(temp_path, [show_url]))[0]
+                show_file_path = list(self._download_files(temp_path, [show_url]))[0]
             else:
-                show_file_path = list(
-                    self._create_strm_files(temp_path, [show_url]))[0]
+                show_file_path = list(self._create_strm_files(temp_path, [show_url]))[0]
 
             if set_file_modification_date and self.show["start"]:
-                os.utime(show_file_path, (self.show["start"].replace(tzinfo=timezone.utc).timestamp(),
-                                          self.show["start"].replace(tzinfo=timezone.utc).timestamp()))
+                os.utime(
+                    show_file_path,
+                    (
+                        self.show["start"].replace(tzinfo=timezone.utc).timestamp(),
+                        self.show["start"].replace(tzinfo=timezone.utc).timestamp(),
+                    ),
+                )
 
             show_file_name = show_file_path.name
             if "." in show_file_name:
@@ -1135,8 +1161,9 @@ class Downloader:
                 show_file_extension = ""
 
             if show_file_extension in (".mp4", ".flv", ".mp3", ".strm"):
-                final_show_file = self._move_to_user_target(show_file_path, cwd, target,
-                                                            show_file_name, show_file_extension, "show")
+                final_show_file = self._move_to_user_target(
+                    show_file_path, cwd, target, show_file_name, show_file_extension, "show"
+                )
                 if not final_show_file:
                     return None
 
@@ -1193,7 +1220,8 @@ class Downloader:
 
         return None
 
-def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional[int], Optional[int]]:
+
+def _guess_series_details(title: str, manual_season: int = 1) -> Tuple[Optional[int], Optional[int]]:
     """Heuristics to extract season and episode information from the title.
 
     Examples with season and episode information:
@@ -1293,27 +1321,29 @@ def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional
 
 def run_post_download_hook(executable: Path, item: Database.Item, downloaded_file: Path) -> None:
     try:
-        subprocess.run([executable.as_posix()],
-                       shell=True,
-                       check=True,
-                       stdout=subprocess.PIPE,
-                       stderr=subprocess.STDOUT,
-                       env={
-                           "MTV_DL_FILE": downloaded_file.as_posix(),
-                           "MTV_DL_HASH": item["hash"],
-                           "MTV_DL_CHANNEL":  item["channel"],
-                           "MTV_DL_DESCRIPTION":  item["description"],
-                           "MTV_DL_REGION":  item["region"],
-                           "MTV_DL_SIZE":  str(item["size"]),
-                           "MTV_DL_TITLE":  item["title"],
-                           "MTV_DL_TOPIC":  item["topic"],
-                           "MTV_DL_WEBSITE":  item["website"],
-                           "MTV_DL_START":  item["start"].isoformat(),
-                           "MTV_DL_DURATION":  str(item["duration"].total_seconds()),
-                           "MTV_DL_SEASON":  str(item["season"]),
-                           "MTV_DL_EPISODE":  str(item["episode"]),
-                       },
-                       encoding="utf-8")
+        subprocess.run(
+            [executable.as_posix()],
+            shell=True,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env={
+                "MTV_DL_FILE": downloaded_file.as_posix(),
+                "MTV_DL_HASH": item["hash"],
+                "MTV_DL_CHANNEL": item["channel"],
+                "MTV_DL_DESCRIPTION": item["description"],
+                "MTV_DL_REGION": item["region"],
+                "MTV_DL_SIZE": str(item["size"]),
+                "MTV_DL_TITLE": item["title"],
+                "MTV_DL_TOPIC": item["topic"],
+                "MTV_DL_WEBSITE": item["website"],
+                "MTV_DL_START": item["start"].isoformat(),
+                "MTV_DL_DURATION": str(item["duration"].total_seconds()),
+                "MTV_DL_SEASON": str(item["season"]),
+                "MTV_DL_EPISODE": str(item["episode"]),
+            },
+            encoding="utf-8",
+        )
     except subprocess.CalledProcessError as e:
         logger.error("Post-download hook %r returned with code %s:\n%s", executable, e.returncode, e.stdout)
     else:
@@ -1321,7 +1351,6 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
 
 
 def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
-
     config_file_path = (Path(arguments["--config"]) if arguments["--config"] else DEFAULT_CONFIG_FILE).expanduser()
 
     try:
@@ -1347,8 +1376,12 @@ def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
             for option in config:
                 option_type = CONFIG_OPTIONS.get(option)
                 if option_type and not isinstance(config[option], option_type):
-                    logger.error("Invalid type for config option %r (found %r but %r expected).",
-                                 option, type(config[option]).__name__, CONFIG_OPTIONS[option].__name__)
+                    logger.error(
+                        "Invalid type for config option %r (found %r but %r expected).",
+                        option,
+                        type(config[option]).__name__,
+                        CONFIG_OPTIONS[option].__name__,
+                    )
                     sys.exit(1)
 
         arguments.update({"--%s" % o: config[o] for o in config})
@@ -1357,15 +1390,21 @@ def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main() -> None:
+    """Entry point for the command line interface."""
 
     # argument handling
-    arguments = docopt.docopt(__doc__.format(cmd=Path(__file__).name,
-                                             version=__version__,
-                                             config_file=DEFAULT_CONFIG_FILE,
-                                             config_options=wrap(", ".join(f"{c} ({k.__name__})"
-                                                                           for c, k in CONFIG_OPTIONS.items()),
-                                                                 width=80,
-                                                                 subsequent_indent=" " * 4)))
+    arguments = docopt.docopt(
+        __doc__.format(
+            cmd=Path(__file__).name,
+            version=__version__,
+            config_file=DEFAULT_CONFIG_FILE,
+            config_options=wrap(
+                ", ".join(f"{c} ({k.__name__})" for c, k in CONFIG_OPTIONS.items()),
+                width=80,
+                subsequent_indent=" " * 4,
+            ),
+        )
+    )
 
     # mute third party modules
     logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -1393,9 +1432,7 @@ def main() -> None:
         logging_handler.setFormatter(logging.Formatter(datefmt="%Y-%m-%dT%H:%M:%S%z "))
 
     logger.addHandler(logging_handler)
-    sys.excepthook = lambda _c, _e, _t: logger.critical(
-        "%s: %s\n%s", _c, _e, "".join(traceback.format_tb(_t))
-    )
+    sys.excepthook = lambda _c, _e, _t: logger.critical("%s: %s\n%s", _c, _e, "".join(traceback.format_tb(_t)))
 
     # progressbar handling
     global HIDE_PROGRESSBAR
@@ -1404,6 +1441,7 @@ def main() -> None:
     global CAFILE
     if arguments["--certifi"]:
         import certifi
+
         CAFILE = certifi.where()
 
     if arguments["--verbose"]:
@@ -1420,8 +1458,7 @@ def main() -> None:
     tempfile.tempdir = cw_dir.as_posix()
 
     try:
-        showlist = Database(filmliste=cw_dir / FILMLISTE_DATABASE_FILE,
-                            history=cw_dir / HISTORY_DATABASE_FILE)
+        showlist = Database(filmliste=cw_dir / FILMLISTE_DATABASE_FILE, history=cw_dir / HISTORY_DATABASE_FILE)
         showlist.initialize_if_old(refresh_after=int(arguments["--refresh-after"]))
 
         if arguments["history"]:
@@ -1433,15 +1470,18 @@ def main() -> None:
                 show_table(showlist.downloaded())
 
         else:
-
             limit = int(arguments["--count"]) if arguments["list"] else None
-            shows = chain(*(showlist.filtered(rules=filter_set,
-                                              include_future=arguments["--include-future"],
-                                              limit=limit or None)
-                            for filter_set
-                            in showlist.read_filter_sets(sets_file_path=(Path(arguments["--sets"])
-                                                                         if arguments["--sets"] else None),
-                                                         default_filter=arguments["<filter>"])))
+            shows = chain(
+                *(
+                    showlist.filtered(
+                        rules=filter_set, include_future=arguments["--include-future"], limit=limit or None
+                    )
+                    for filter_set in showlist.read_filter_sets(
+                        sets_file_path=(Path(arguments["--sets"]) if arguments["--sets"] else None),
+                        default_filter=arguments["<filter>"],
+                    )
+                )
+            )
             if arguments["list"]:
                 show_table(shows)
 
@@ -1461,12 +1501,14 @@ def main() -> None:
                                 quality_preference = ("url_http", "url_http_hd", "url_http_small")
                             downloaded_file = downloader.download(
                                 quality_preference,  # type: ignore
-                                cw_dir, target_dir,
+                                cw_dir,
+                                target_dir,
                                 include_subtitles=not arguments["--no-subtitles"],
                                 include_nfo=not arguments["--no-nfo"],
                                 set_file_modification_date=arguments["--set-file-mod-time"],
                                 create_strm_files=arguments["--strm"],
-                                series_mode=arguments["--series"])
+                                series_mode=arguments["--series"],
+                            )
                             if downloaded_file:
                                 showlist.add_to_downloaded(item)
                                 if arguments["--post-download"]:
