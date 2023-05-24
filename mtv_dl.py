@@ -21,7 +21,7 @@ Options:
   -q, --quiet                           Hide everything not really needed.
   -b, --no-bar                          Hide the progressbar.
   -l <path>, --logfile=<path>           Log messages to a file instead of stdout.
-  -r <hours>, --refresh-after=<hours>   Update database if it is older then the given
+  -r <hours>, --refresh-after=<hours>   Update database if it is older than the given
                                         number of hours. [default: 3]
   -d <path>, --dir=<path>               Directory to put the databases in (default is
                                         the current working directory).
@@ -44,7 +44,7 @@ History options:
   --remove=<hash>                       Remove a single show from the history.
 
 Download options:
-  -h, --high                            Download best available version.
+  -h, --high                            Download the best available version.
   -l, --low                             Download the smallest available version.
   -o, --oblivious                       Download even if the show already is marked as downloaded.
   -t, --target=<path>                   Directory to put the downloaded files in. May contain
@@ -78,18 +78,18 @@ Filters:
 
   The following operators and fields are available:
 
-   '='  Pattern is a search within the field value. It's a case insensitive regular expression
+   '='  Pattern is a search within the field value. It's a case-insensitive regular expression
         for the fields 'description', 'start', 'dow' (day of the week), 'hour', 'minute',
         'region', 'size', 'channel', 'topic', 'title', 'hash' and 'url'. For the fields
         'duration', 'age', 'episode', and 'season' it's a basic equality comparison.
 
    '!=' Inverse of the '=' operator.
 
-   '+'  Pattern must be greater then the field value. Available for the fields 'duration',
+   '+'  Pattern must be greater than the field value. Available for the fields 'duration',
         'age', 'start', 'dow' (day of the week), 'hour', 'minute', 'size', 'episode', and
         'season'.
 
-   '-'  Pattern must be less then the field value. Available for the same fields as for
+   '-'  Pattern must be less than the field value. Available for the same fields as for
         the '+' operator.
 
   Pattern should be given in the same format as shown in the list command. Times (for
@@ -100,14 +100,14 @@ Filters:
     - topic='extra 3'                   (topic contains 'extra 3')
     - title!=spezial                    (title not contains 'spezial')
     - channel=ARD                       (channel contains ARD)
-    - age-1mm                           (age is younger then 1 month)
+    - age-1mm                           (age is younger than 1 month)
     - duration+20m                      (duration longer then 20 min)
     - start+2017-07-01                  (show started after 2017-07-01)
     - start-2017-07-05T23:00:00+02:00   (show started before 2017-07-05, 23:00 CEST)
     - topic=Tatort dow=0 hour=20        (sunday night Tatort)
 
   As many filters as needed may be given as separated arguments (separated  with space).
-  For a show to get considered, _all_ given filter criteria must met.
+  For a show to get considered, _all_ given filter criteria must meet.
 
 Filter sets:
 
@@ -125,7 +125,7 @@ Filter sets:
     channel=ZDF topic=heute-show duration+20m
 
   If additional filters where given through the commandline, all filter sets are extended
-  by these filters. Be aware that this is not faster then running all queries separately
+  by these filters. Be aware that this is not faster than running all queries separately
   but just more comfortable.
 
 Config file:
