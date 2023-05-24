@@ -46,7 +46,25 @@ format = '{base}.{distance}'
 
 [tool.ruff]
 line-length = 120
+target-version = "py38"
+select = [
+    "A",
+    "ARG",
+    "E",
+    "F",
+    "I",
+    "N",
+    "PTH",
+    "Q",
+    "RUF",
+    "SIM",
+    "UP",
+    "W",
+]
 exclude = [".venv"]
+
+[tool.ruff.isort]
+force-single-line = true
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]
