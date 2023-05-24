@@ -67,9 +67,9 @@ Download options:
   -s <file>, --sets=<file>              A file to load different sets of filters (see below
                                         for details). In the file every different filter set
                                         is expected to be on a new line.
-  --series                              Mark the show as series in the nfo file, add season and 
+  --series                              Mark the show as series in the nfo file, add season and
                                         episode information.
-  
+
   WARNING: Please be aware that ancient RTMP streams are not supported
            They will not even get listed.
 
@@ -430,7 +430,7 @@ class Database(object):
                 );
             """)
             cursor.execute('PRAGMA history.user_version=2')
-        elif self.history_version == 1:       
+        elif self.history_version == 1:
             logger.info('Upgrading history database schema, adding columns for season and episode')
             # manually control transactions to make sure this schema upgrade is atomic
             old_isolation_level = self.connection.isolation_level
@@ -829,7 +829,7 @@ class Database(object):
             yield dict(row)  # type: ignore
 
 
-def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = None, series_mode: bool = False) -> None:
+def show_table(shows: Iterable[Database.Item]) -> None:
 
     def _escape_cell(title: str, obj: Any) -> str:
         if title == 'hash':
@@ -851,21 +851,20 @@ def show_table(shows: Iterable[Database.Item], headers: Optional[List[str]] = No
         else:
             return str(obj)
 
-    if not isinstance(headers, list):
-        headers = [
-        'hash',
-        'channel',
-        'title',
-        'topic',
-        'size',
-        'start',
-        'duration',
-        'age',
-        'region',
-        'downloaded']
-
-        if series_mode:
-            headers.extend(['season', 'episode'])
+    headers = [
+        "hash",
+        "channel",
+        "title",
+        "topic",
+        "size",
+        "start",
+        "duration",
+        "age",
+        "region",
+        "downloaded",
+        "season",
+        "episode",
+    ]
 
     # noinspection PyTypeChecker
     table = Table(box=box.MINIMAL_DOUBLE_HEAD)
@@ -1107,7 +1106,7 @@ class Downloader:
                  include_subtitles: bool = True,
                  include_nfo: bool = True,
                  set_file_modification_date: bool = False,
-                 create_strm_files: bool = False,               
+                 create_strm_files: bool = False,
                  series_mode : bool = False
                  ) -> Optional[Path]:
         temp_path = Path(tempfile.mkdtemp(prefix='.tmp'))
@@ -1201,9 +1200,9 @@ class Downloader:
 
         return None
 
-def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional[int], Optional[int]]: 
+def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional[int], Optional[int]]:
     """Heuristics to extract season and episode information from the title.
-    
+
     Examples with season and episode information:
         >>> _guess_series_details("Folge 4: Mehr als eine Entscheidung (S01/E04) - Audiodeskription")
         (1, 4)
@@ -1217,23 +1216,23 @@ def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional
     Examples without season information:
         >>> _guess_series_details("#45 Trostloser VfB-Auftritt in Dortmund")
         (1, 45)
-        
+
         expect the tool to find the first pattern if multiple are present
         >>> _guess_series_details("StarStarSpace #23/Japanoschlampen #34 - Die verschollene Episode")
         (1, 23)
         >>> _guess_series_details("Folge 7 (OmU) - Originalfassung mit deutschen Untertiteln")
         (1, 7)
-        
-        prefer "12. Folge" over "(1)"        
+
+        prefer "12. Folge" over "(1)"
         >>> _guess_series_details("Rückblick: 12. Folge - Zwillingszauber (1)")
         (1, 12)
         >>> _guess_series_details("Folge 9 ")
         (1, 9)
-        
+
         don't trigger on the "#delikat" prefix
         >>> _guess_series_details("#delikatdelikat Folge 06 - Late Night Alter")
         (1, 6)
-        
+
         ignore the 36, as this is the total number of episodes
         >>> _guess_series_details("Folge 11/36")
         (1, 11)
@@ -1270,7 +1269,7 @@ def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional
 
     # Patterns that recognize episodes only.
     episode_patterns = [
-        # "Folge 3" 
+        # "Folge 3"
         re.compile(r"Folge (\d+)"),
         # "Episode 3"
         re.compile(r"Episode (\d+)"),
@@ -1290,12 +1289,12 @@ def _guess_series_details(title: str, manual_season : int = 1) -> Tuple[Optional
         m = pattern.search(title)
         if m is not None:
             return int(m["S"]), int(m["E"])
-    
+
     for pattern in episode_patterns:
         m = pattern.search(title)
         if m is not None:
             return manual_season, int(m.group(1))
-       
+
     return None, None
 
 
@@ -1438,7 +1437,7 @@ def main() -> None:
             elif arguments['--remove']:
                 showlist.remove_from_downloaded(show_hash=arguments['--remove'])
             else:
-                show_table(showlist.downloaded(), series_mode=True)
+                show_table(showlist.downloaded())
 
         else:
 
@@ -1449,9 +1448,9 @@ def main() -> None:
                             for filter_set
                             in showlist.read_filter_sets(sets_file_path=(Path(arguments['--sets'])
                                                                          if arguments['--sets'] else None),
-                                                         default_filter=arguments['<filter>'])))           
+                                                         default_filter=arguments['<filter>'])))
             if arguments['list']:
-                show_table(shows, series_mode=True)
+                show_table(shows)
 
             elif arguments['dump']:
                 print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))
