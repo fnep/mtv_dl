@@ -432,7 +432,7 @@ class Database:
                     duration TIMEDELTA,
                     downloaded TIMESTAMP,
                     season INTEGER,
-                    episode INTEGER
+                    episode INTEGER,
                     UNIQUE (hash)
                 );
                 """
