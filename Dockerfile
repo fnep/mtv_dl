@@ -1,10 +1,10 @@
 FROM python:3.10 AS build
-RUN pip3 install poetry
-COPY ./ /app
+RUN pip3 install poetry poetry-dynamic-versioning
+COPY ./ /app/
+RUN rm -rf /app/dist
 WORKDIR /app
 RUN poetry install
 RUN poetry build
-RUN rm -f dist/mtv_dl-0.0.0-py3-none-any.whl
 
 FROM python:3.10
 COPY --from=build /app/dist/*.whl /tmp/
