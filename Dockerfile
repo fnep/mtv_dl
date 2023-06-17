@@ -1,11 +1,15 @@
-FROM python:3.8
-
-COPY pyproject.toml DESCRIPTION.rst mtv_dl.py /
+FROM python:3.10 AS build
 RUN pip3 install poetry
-RUN poetry install --no-dev
+COPY ./ /app
+WORKDIR /app
+RUN poetry install
+RUN poetry build
+RUN rm -f dist/mtv_dl-0.0.0-py3-none-any.whl
 
+FROM python:3.10
+COPY --from=build /app/dist/*.whl /tmp/
+RUN pip3 install /tmp/*.whl && rm /tmp/*.whl
 RUN mkdir /data
 VOLUME /data
 WORKDIR /data
-
-ENTRYPOINT ["poetry", "run", "mtv_dl"]
+ENTRYPOINT ["mtv_dl"]
