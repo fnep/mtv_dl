@@ -23,7 +23,7 @@ durationpy = "0.5"
 PyYAML = "^6.0"
 beautifulsoup4 = "^4.12.2"
 rich = "^13.3.4"
-certifi = "^2022.12.7"
+certifi = ">=2022.12.7,<2024.0.0"
 ijson = "^3.2.0.post0"
 
 [tool.poetry.group.dev.dependencies]
