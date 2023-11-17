@@ -265,6 +265,32 @@ def progress_bar() -> Iterator[Progress]:
         yield progress
 
 
+class SqlRegexFunction:
+    """A simple SQL function to use regular expressions in SQL statements.
+
+    This is a workaround for the missing REGEXP operator in sqlite3.
+    It will deduplicate the compiled regular expressions to avoid
+    recompiling the same expression over and over again. Also, it will
+    log warnings if the regular expression is invalid only once.
+    """
+
+    last_error: str = ""
+    last_expression: str = ""
+    pattern: "re.Pattern[str]" = re.compile("")
+
+    def __call__(self, expr: str, item: str) -> bool:
+        try:
+            if self.last_expression != expr:
+                self.last_expression = expr
+                self.pattern = re.compile(expr, re.IGNORECASE)
+        except re.error as e:
+            if self.last_error != str(e):
+                self.last_error = str(e)
+                logger.warning("Invalid regular expression %r (using string match instead): %s", expr, e)
+            self.pattern = re.compile(re.escape(expr), re.IGNORECASE)
+        return self.pattern.search(item) is not None
+
+
 class ConfigurationError(Exception):
     pass
 
@@ -462,11 +488,7 @@ class Database:
         self.connection.cursor().execute("ATTACH ? AS history", (history.as_posix(),))
 
         self.connection.row_factory = sqlite3.Row
-        self.connection.create_function(
-            "REGEXP",
-            2,
-            lambda expr, item: re.compile(expr, re.IGNORECASE).search(item) is not None,
-        )
+        self.connection.create_function("REGEXP", 2, SqlRegexFunction())
         if self.filmliste_version == 0:
             self.initialize_filmliste()
         if self.history_version != 2:
