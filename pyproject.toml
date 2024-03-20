@@ -36,7 +36,7 @@ ruff = "^0.0.262"
 pytest-black = "^0.3.12"
 pytest-mypy = "^0.10.3"
 pytest-ruff = "^0.0.5"
-black = "^23.3.0"
+black = ">=23.3,<25.0"
 
 [tool.poetry.scripts]
 mtv_dl = 'mtv_dl:main'
