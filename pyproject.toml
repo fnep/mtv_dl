@@ -17,7 +17,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 python = "^3.8"
-iso8601 = "^1.1.0"
+iso8601 = "^2.1.0"
 docopt = "^0.6.2"
 durationpy = "0.5"
 PyYAML = "^6.0"
