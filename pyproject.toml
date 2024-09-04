@@ -19,24 +19,23 @@ classifiers = [
 python = "^3.10"
 iso8601 = "^2.1.0"
 docopt = "^0.6.2"
-durationpy = "0.5"
+durationpy = "^0.7"
 PyYAML = "^6.0"
-beautifulsoup4 = "^4.12.2"
-rich = "^13.3.4"
-certifi = ">=2024.7.4,<2025.0.0"
-ijson = "^3.2.0.post0"
+beautifulsoup4 = "^4.12.3"
+rich = "^13.8.0"
+certifi = "^2024.8.30"
+ijson = "^3.3.0"
 
 [tool.poetry.group.dev.dependencies]
-mypy = "^1.2.0"
-twine = "^4.0.2"
-types-PyYAML = "^6.0.12.9"
+mypy = "^1.11.2"
+twine = "^5.1.1"
+types-PyYAML = "^6.0.12.20240808"
 types-certifi = "^2021.10.8.3"
-pytest = "^7.3.1"
-ruff = "^0.0.262"
+pytest = "^8.3.2"
+ruff = "^0.6.3"
 pytest-black = "^0.3.12"
 pytest-mypy = "^0.10.3"
-pytest-ruff = "^0.0.5"
-black = "^23.3.0"
+pytest-ruff = "^0.4.1"
 
 [tool.poetry.scripts]
 mtv_dl = 'mtv_dl:main'
@@ -57,7 +56,7 @@ line-length = 120
 [tool.ruff]
 line-length = 120
 target-version = "py310"
-select = [
+lint.select = [
     "A",
     "ARG",
     "E",
@@ -71,10 +70,8 @@ select = [
     "UP",
     "W",
 ]
+lint.isort.force-single-line = true
 exclude = [".venv"]
-
-[tool.ruff.isort]
-force-single-line = true
 
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning"]

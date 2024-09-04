@@ -142,7 +142,7 @@ Config file:
     high: true
     dir: ~/download
 
- """
+"""
 
 import hashlib
 import http.client
@@ -175,6 +175,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from textwrap import fill as wrap
 from typing import Any
+from typing import ClassVar
 from typing import Literal
 from typing import TypedDict
 from xml.etree import ElementTree as Et
@@ -300,7 +301,7 @@ def serialize_for_json(obj: Any) -> str:
     elif isinstance(obj, timedelta):
         return str(obj)
     else:
-        raise TypeError("%r is not JSON serializable" % obj)
+        raise TypeError(f"{obj!r} is not JSON serializable")
 
 
 def escape_path(s: str) -> str:
@@ -309,7 +310,7 @@ def escape_path(s: str) -> str:
 
 class Database:
     # noinspection SpellCheckingInspection
-    TRANSLATION = {
+    TRANSLATION: ClassVar = {
         "Beschreibung": "description",
         "Datum": "date",
         "DatumL": "start",
@@ -333,7 +334,7 @@ class Database:
     }
 
     class Item(TypedDict):
-        hash: str  # noqa: A003
+        hash: str
         channel: str
         description: str
         region: str
@@ -356,7 +357,7 @@ class Database:
     def database_file(self, schema: str = "main") -> Path:
         cursor = self.connection.cursor()
         database_index = {db[1]: db[2] for db in cursor.execute("PRAGMA database_list")}
-        if schema in database_index and database_index[schema]:
+        if database_index.get(schema):
             return Path(database_index[schema])
         else:
             raise ValueError(f"Database file for {schema!r} not found.")
@@ -552,7 +553,7 @@ class Database:
                 if retries:
                     logger.debug("Database download failed (%d more retries): %s" % (retries, e))
                 else:
-                    logger.error("Database download failed (no more retries): %s" % e)
+                    logger.error(f"Database download failed (no more retries): {e}")
                     raise RetryLimitExceededError("retry limit reached, giving up")
                 time.sleep(10)
             else:
@@ -837,7 +838,7 @@ class Database:
                             raise ConfigurationError(f"Invalid operator {operator!r} for {field!r}.")
 
                     else:
-                        raise ConfigurationError("Invalid operator: %r" % operator)
+                        raise ConfigurationError(f"Invalid operator: {operator!r}")
 
                 else:
                     raise ConfigurationError("Property and filter rule expected to be separated by an operator.")
@@ -1045,7 +1046,7 @@ class Downloader:
         else:
             designated_index_segment = hls_index_segments[len(hls_index_segments) // 2]
 
-        designated_index_file = list(self._download_files(temp_dir_path, [designated_index_segment["url"]]))[0]
+        designated_index_file = next(iter(self._download_files(temp_dir_path, [designated_index_segment["url"]])))
         logger.debug(
             "Selected HLS bandwidth is %d (available: %s).",
             designated_index_segment["bandwidth"],
@@ -1157,9 +1158,9 @@ class Downloader:
             logger.debug("Downloading %s from %r.", self.label, show_url)
 
             if not create_strm_files:
-                show_file_path = list(self._download_files(temp_path, [show_url]))[0]
+                show_file_path = next(iter(self._download_files(temp_path, [show_url])))
             else:
-                show_file_path = list(self._create_strm_files(temp_path, [show_url]))[0]
+                show_file_path = next(iter(self._create_strm_files(temp_path, [show_url])))
 
             if set_file_modification_date and self.show["start"]:
                 os.utime(
@@ -1200,7 +1201,7 @@ class Downloader:
 
             if include_subtitles and self.show["url_subtitles"]:
                 logger.debug("Downloading subtitles for %s from %r.", self.label, self.show["url_subtitles"])
-                subtitles_xml_path = list(self._download_files(temp_path, [self.show["url_subtitles"]]))[0]
+                subtitles_xml_path = next(iter(self._download_files(temp_path, [self.show["url_subtitles"]])))
                 subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
                 self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, ".srt", "subtitles")
 
@@ -1401,7 +1402,7 @@ def load_config(arguments: dict[str, Any]) -> dict[str, Any]:
                     )
                     sys.exit(1)
 
-        arguments.update({"--%s" % o: config[o] for o in config})
+        arguments.update({f"--{o}": config[o] for o in config})
 
     return arguments
 
