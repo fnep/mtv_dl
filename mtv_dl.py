@@ -162,6 +162,8 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextlib import suppress
 from datetime import datetime
@@ -173,15 +175,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from textwrap import fill as wrap
 from typing import Any
-from typing import Dict
-from typing import Iterable
-from typing import Iterator
-from typing import List
 from typing import Literal
-from typing import Optional
-from typing import Tuple
 from typing import TypedDict
-from typing import Union
 from xml.etree import ElementTree as Et
 
 import docopt
@@ -205,7 +200,7 @@ __version__ = "0.0.0"
 CHUNK_SIZE = 128 * 1024
 
 HIDE_PROGRESSBAR = True
-CAFILE: Optional[str] = None
+CAFILE: str | None = None
 DEFAULT_CONFIG_FILE = Path("~/.mtv_dl.yml")
 CONFIG_OPTIONS = {
     "count": int,
@@ -347,16 +342,16 @@ class Database:
         topic: str
         website: str
         new: bool
-        url_http: Optional[str]
-        url_http_hd: Optional[str]
-        url_http_small: Optional[str]
+        url_http: str | None
+        url_http_hd: str | None
+        url_http_small: str | None
         url_subtitles: str
         start: datetime
         duration: timedelta
         age: timedelta
-        downloaded: Optional[datetime]
-        season: Optional[int]
-        episode: Optional[int]
+        downloaded: datetime | None
+        season: int | None
+        episode: int | None
 
     def database_file(self, schema: str = "main") -> Path:
         cursor = self.connection.cursor()
@@ -495,7 +490,7 @@ class Database:
             self.initialize_history()
 
     @staticmethod
-    def _qualify_url(basis: str, extension: str) -> Union[str, None]:
+    def _qualify_url(basis: str, extension: str) -> str | None:
         if extension:
             if "|" in extension:
                 offset, text = extension.split("|", maxsplit=1)
@@ -564,8 +559,8 @@ class Database:
                 break
 
     def _get_shows(self) -> Iterable["Database.Item"]:
-        meta: Dict[str, Any] = {}
-        header: List[str] = []
+        meta: dict[str, Any] = {}
+        header: list[str] = []
         channel, topic, region = "", "", ""
         with self._showlist() as showlist_archive, lzma.open(showlist_archive, "rb") as fh:
             logger.debug("Loading database items.")
@@ -695,7 +690,7 @@ class Database:
             return True
 
     @staticmethod
-    def read_filter_sets(sets_file_path: Optional[Path], default_filter: List[str]) -> Iterator[List[str]]:
+    def read_filter_sets(sets_file_path: Path | None, default_filter: list[str]) -> Iterator[list[str]]:
         if sets_file_path:
             with sets_file_path.expanduser().open("r+", encoding="utf-8") as set_fh:
                 for line in set_fh:
@@ -706,12 +701,12 @@ class Database:
 
     def filtered(
         self,
-        rules: List[str],
+        rules: list[str],
         include_future: bool = False,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> Iterator["Database.Item"]:
         where = []
-        arguments: List[Any] = []
+        arguments: list[Any] = []
         if rules:
             logger.debug("Applying filter: %s (limit: %s)", ", ".join(rules), limit)
 
@@ -933,7 +928,7 @@ class Downloader:
     def label(self) -> str:
         return "{title!r} ({channel}, {topic!r}, {start}, {hash:.11})".format(**self.show)
 
-    def _download_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
+    def _download_files(self, destination_dir_path: Path, target_urls: list[str]) -> Iterable[Path]:
         file_sizes = []
         with progress_bar() as progress:
             bar_id = progress.add_task(description=f"Downloading {self.label}")
@@ -960,7 +955,7 @@ class Downloader:
 
                 yield destination_file_path
 
-    def _create_strm_files(self, destination_dir_path: Path, target_urls: List[str]) -> Iterable[Path]:
+    def _create_strm_files(self, destination_dir_path: Path, target_urls: list[str]) -> Iterable[Path]:
         for url in target_urls:
             file_name = Path(url).with_suffix(".strm").name
             destination_file_path = destination_dir_path / file_name
@@ -978,7 +973,7 @@ class Downloader:
         file_name: str,
         file_extension: str,
         media_type: str,
-    ) -> Union[Literal[False], Path]:
+    ) -> Literal[False] | Path:
         posix_target = target.as_posix()
         if "{ext}" not in posix_target:
             posix_target += "{ext}"
@@ -1009,9 +1004,9 @@ class Downloader:
         return False
 
     @staticmethod
-    def _get_m3u8_segments(base_url: str, m3u8_file_path: Path) -> Iterator[Dict[str, Any]]:
+    def _get_m3u8_segments(base_url: str, m3u8_file_path: Path) -> Iterator[dict[str, Any]]:
         with m3u8_file_path.open("r+", encoding="utf-8") as fh:
-            segment: Dict[str, Any] = {}
+            segment: dict[str, Any] = {}
             for line in fh:
                 if not line:
                     continue
@@ -1032,10 +1027,10 @@ class Downloader:
 
     def _download_hls_target(
         self,
-        m3u8_segments: List[Dict[str, Any]],
+        m3u8_segments: list[dict[str, Any]],
         temp_dir_path: Path,
         base_url: str,
-        quality_preference: Tuple[str, str, str],
+        quality_preference: tuple[str, str, str],
     ) -> Path:
         hls_index_segments = sorted(
             [s for s in m3u8_segments if "mp4a" not in s.get("codecs", {}) and s.get("bandwidth")],
@@ -1074,7 +1069,7 @@ class Downloader:
 
         return temp_file_path
 
-    def _download_m3u8_target(self, m3u8_segments: List[Dict[str, Any]], temp_dir_path: Path) -> Path:
+    def _download_m3u8_target(self, m3u8_segments: list[dict[str, Any]], temp_dir_path: Path) -> Path:
         # get segments
         hls_target_files = self._download_files(temp_dir_path, list(s["url"] for s in m3u8_segments))
         logger.debug("%d m3u8 segments to download.", len(m3u8_segments))
@@ -1140,7 +1135,7 @@ class Downloader:
 
     def download(
         self,
-        quality: Tuple[Quality, Quality, Quality],
+        quality: tuple[Quality, Quality, Quality],
         cwd: Path,
         target: Path,
         *,
@@ -1149,7 +1144,7 @@ class Downloader:
         set_file_modification_date: bool = False,
         create_strm_files: bool = False,
         series_mode: bool = False,
-    ) -> Optional[Path]:
+    ) -> Path | None:
         temp_path = Path(tempfile.mkdtemp(prefix=".tmp"))
         try:
             # show url based on quality preference
@@ -1243,7 +1238,7 @@ class Downloader:
         return None
 
 
-def _guess_series_details(title: str, manual_season: int = 1) -> Tuple[Optional[int], Optional[int]]:
+def _guess_series_details(title: str, manual_season: int = 1) -> tuple[int | None, int | None]:
     """Heuristics to extract season and episode information from the title.
 
     Examples with season and episode information:
@@ -1372,7 +1367,7 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
         logger.info("Post-download hook %r returned successful.", executable)
 
 
-def load_config(arguments: Dict[str, Any]) -> Dict[str, Any]:
+def load_config(arguments: dict[str, Any]) -> dict[str, Any]:
     config_file_path = (Path(arguments["--config"]) if arguments["--config"] else DEFAULT_CONFIG_FILE).expanduser()
 
     try:
