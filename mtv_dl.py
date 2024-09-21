@@ -1201,9 +1201,13 @@ class Downloader:
 
             if include_subtitles and self.show["url_subtitles"]:
                 logger.debug("Downloading subtitles for %s from %r.", self.label, self.show["url_subtitles"])
-                subtitles_xml_path = next(iter(self._download_files(temp_path, [self.show["url_subtitles"]])))
-                subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
-                self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, ".srt", "subtitles")
+                try:
+                    subtitles_xml_path = next(iter(self._download_files(temp_path, [self.show["url_subtitles"]])))
+                except urllib.error.HTTPError:
+                    logger.warning("Missing subtitles for %s.", self.label)
+                else:
+                    subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
+                    self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, ".srt", "subtitles")
 
             if include_nfo:
                 root_node = "movie" if not series_mode else "episodedetails"
