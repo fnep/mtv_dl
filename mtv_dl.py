@@ -1289,6 +1289,8 @@ def _guess_series_details(title: str, manual_season: int = 1) -> tuple[int | Non
         (1, 3245)
         >>> _guess_series_details("Helvetica (Episode 2 von 6)")
         (1, 2)
+        >>> _guess_series_details("1077. Der Code-Knacker")
+        (1, 1077)
 
     Examples of titles that cannot be parsed:
         >>> _guess_series_details("Krieg in Europa: Tag 14")
@@ -1320,6 +1322,8 @@ def _guess_series_details(title: str, manual_season: int = 1) -> tuple[int | Non
         re.compile(r"(\d+)\. Folge"),
         # "7. Episode"
         re.compile(r"(\d+)\. Episode"),
+        # "7. Name der Folge" (from start of string)
+        re.compile(r"^(\d+)\.\s"),
         # "(12)"
         re.compile(r"\((\d+)\)"),
         # "(3/5)", where 3 is the episode and 5 is the total number of episodes
