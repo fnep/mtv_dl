@@ -33,7 +33,6 @@ types-PyYAML = "^6.0.12.20240808"
 types-certifi = "^2021.10.8.3"
 pytest = "^8.3.2"
 ruff = "^0.6.3"
-pytest-black = "^0.3.12"
 pytest-mypy = "^0.10.3"
 pytest-ruff = "^0.4.1"
 
@@ -76,3 +75,7 @@ exclude = [".venv"]
 [build-system]
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
 build-backend = "poetry_dynamic_versioning.backend"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules --mypy --ruff --ruff-format"
+xfail_strict = true
