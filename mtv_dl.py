@@ -1,149 +1,5 @@
 #!/usr/bin/env python3
 
-# noinspection SpellCheckingInspection
-"""MediathekView-Commandline-Downloader {version}
-
-Usage:
-  {cmd} list [options] [--sets=<file>] [--count=<results>] [<filter>...]
-  {cmd} dump [options] [--sets=<file>] [<filter>...]
-  {cmd} download [options] [--sets=<file>] [--low|--high] [<filter>...]
-  {cmd} history [options] [--reset|--remove=<hash>]
-  {cmd} --help
-
-Commands:
-  list                                  Show the list of query results as ascii table.
-  dump                                  Show the list of query results as json list.
-  history                               Show the list of downloaded shows.
-  download                              Download shows in the list of query results.
-
-Options:
-  -v, --verbose                         Show more details.
-  -q, --quiet                           Hide everything not really needed.
-  -b, --no-bar                          Hide the progressbar.
-  -l <path>, --logfile=<path>           Log messages to a file instead of stdout.
-  -r <hours>, --refresh-after=<hours>   Update database if it is older than the given
-                                        number of hours. [default: 3]
-  -d <path>, --dir=<path>               Directory to put the databases in (default is
-                                        the current working directory).
-  --include-future                      Include shows that have not yet started.
-  --config=<path>                       Path to the config file.
-  --certifi                             Use certifi instead of builtin SSL certificates
-
-Hooks:
-  --post-download=<path>                Programm to run after a download has finished.
-                                        Details about the downloaded how are given via
-                                        environment variables: FILE, HASH, CHANNEL, DESCRIPTION,
-                                        REGION, SIZE, TITLE, TOPIC, WEBSITE, START, and DURATION
-                                        (all prefixed with MTV_DL_).
-
-List options:
-  -c <results>, --count=<results>       Limit the number of results. [default: 50]
-
-History options:
-  --reset                               Reset the list of downloaded shows.
-  --remove=<hash>                       Remove a single show from the history.
-
-Download options:
-  -h, --high                            Download the best available version.
-  -l, --low                             Download the smallest available version.
-  -o, --oblivious                       Download even if the show already is marked as downloaded.
-  -t, --target=<path>                   Directory to put the downloaded files in. May contain
-                                        the parameters {{dir}} (from the option --dir),
-                                        {{filename}} (from server filename) and {{ext}} (file
-                                        name extension including the dot), and all fields from
-                                        the listing plus {{date}} and {{time}} (the single parts
-                                        of {{start}}). If {{ext}} is not in the definition, it's
-                                        appended automatically.
-                                        [default: {{dir}}/{{channel}}/{{topic}}/{{start}} {{title}}{{ext}}]
-  --mark-only                           Do not download any show, but mark it as downloaded
-                                        in the history. This is to initialize a new filter
-                                        if upcoming shows are wanted.
-  --strm                                Create .strm files instead of downloading media
-  --no-subtitles                        Do not try to download subtitles.
-  --no-nfo                              Do not nfo files.
-  --set-file-mod-time                   Sets the file modification time of the downloaded show to
-                                        the aired date (if available).
-  -s <file>, --sets=<file>              A file to load different sets of filters (see below
-                                        for details). In the file every different filter set
-                                        is expected to be on a new line.
-  --series                              Mark the show as series in the nfo file, add season and
-                                        episode information.
-
-  WARNING: Please be aware that ancient RTMP streams are not supported
-           They will not even get listed.
-
-Filters:
-
-  Use filter to select only the shows wanted. Syntax is always <field><operator><pattern>.
-
-  The following operators and fields are available:
-
-   '='  Pattern is a search within the field value. It's a case-insensitive regular expression
-        for the fields 'description', 'start', 'dow' (day of the week), 'hour', 'minute',
-        'region', 'size', 'channel', 'topic', 'title', 'hash' and 'url'. For the fields
-        'duration', 'age', 'episode', and 'season' it's a basic equality comparison.
-
-   '!=' Inverse of the '=' operator.
-
-   '+'  Pattern must be greater than the field value. Available for the fields 'duration',
-        'age', 'start', 'dow' (day of the week), 'hour', 'minute', 'size', 'episode', and
-        'season'.
-
-   '-'  Pattern must be less than the field value. Available for the same fields as for
-        the '+' operator.
-
-  Pattern should be given in the same format as shown in the list command. Times (for
-  'start'), time deltas (for 'duration', 'age') and numbers ('size') are parsed and
-  smart compared. Day of the week ('dow') is 0-6 with Sunday=0.
-
-  Examples:
-    - topic='extra 3'                   (topic contains 'extra 3')
-    - title!=spezial                    (title not contains 'spezial')
-    - channel=ARD                       (channel contains ARD)
-    - age-1mm                           (age is younger than 1 month)
-    - duration+20m                      (duration longer then 20 min)
-    - start+2017-07-01                  (show started after 2017-07-01)
-    - start-2017-07-05T23:00:00+02:00   (show started before 2017-07-05, 23:00 CEST)
-    - topic=Tatort dow=0 hour=20        (sunday night Tatort)
-
-  As many filters as needed may be given as separated arguments (separated  with space).
-  For a show to get considered, _all_ given filter criteria must meet.
-
-Filter sets:
-
-  In commandline with a single run one can only give one set of filters. In most cases
-  this means one can only select a single show to list or download with one run.
-
-  For --sets, a file should be given, where every line contains the same filter arguments
-  that one would give on the commandline. The lines are filtered one after another and
-  then processed together. Lines starting with '#' are treated as comment.
-
-  A text file could look for example like this:
-
-    channel=ARD topic='extra 3' title!=spezial duration+20m
-    channel=ZDF topic='Die Anstalt' duration+45m
-    channel=ZDF topic=heute-show duration+20m
-
-  If additional filters where given through the commandline, all filter sets are extended
-  by these filters. Be aware that this is not faster than running all queries separately
-  but just more comfortable.
-
-Config file:
-
-  The config file is an optional, yaml formatted text file, that allows to overwrite the most
-  arguments by their name. If not defined differently, it is expected to be in the root of
-  the home dir ({config_file}). Valid config keys are:
-
-    {config_options}
-
-  Example config:
-
-    verbose: true
-    high: true
-    dir: ~/download
-
-"""
-
 import hashlib
 import http.client
 import json
@@ -171,20 +27,21 @@ from datetime import timedelta
 from datetime import timezone
 from io import BytesIO
 from itertools import chain
+from os import chdir
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from textwrap import fill as wrap
+from typing import Annotated
 from typing import Any
 from typing import ClassVar
 from typing import Literal
 from typing import TypedDict
 from xml.etree import ElementTree as Et
 
-import docopt
+import certifi
 import durationpy
 import ijson
 import iso8601
-import yaml
+import typer
 from bs4 import BeautifulSoup
 from rich import box
 from rich.console import Console
@@ -194,34 +51,17 @@ from rich.progress import Progress
 from rich.progress import TextColumn
 from rich.progress import TimeRemainingColumn
 from rich.table import Table
-from yaml.error import YAMLError
 
 __version__ = "0.0.0"
 
+from typer_config import use_yaml_config
+
 CHUNK_SIZE = 128 * 1024
 
-HIDE_PROGRESSBAR = True
-CAFILE: str | None = None
-DEFAULT_CONFIG_FILE = Path("~/.mtv_dl.yml")
-CONFIG_OPTIONS = {
-    "count": int,
-    "dir": str,
-    "high": bool,
-    "include-future": bool,
-    "logfile": str,
-    "low": bool,
-    "no-bar": bool,
-    "no-subtitles": bool,
-    "set-file-mod-time": bool,
-    "quiet": bool,
-    "refresh-after": int,
-    "target": str,
-    "verbose": bool,
-    "post-download": str,
-    "strm": bool,
-    "series": bool,
-}
-
+if (default_config_file := Path("~/.mtv_dl.yml").expanduser()).exists():
+    CONFIG_FILE: Path | None = default_config_file
+else:
+    CONFIG_FILE = None
 HISTORY_DATABASE_FILE = ".History.sqlite"
 FILMLISTE_DATABASE_FILE = f".Filmliste.{__version__}.sqlite"
 
@@ -231,6 +71,11 @@ INVALID_FILENAME_CHARACTERS = re.compile("[{}]".format(re.escape('<>:"/\\|?*' + 
 # see https://res.mediathekview.de/akt.xml
 # and https://forum.mediathekview.de/topic/3508/aktuelle-verteiler-und-filmlisten-server
 FILMLISTE_URL = "https://liste.mediathekview.de/Filmliste-akt.xz"
+
+# global state
+HIDE_PROGRESSBAR = True
+CAFILE: str | None = None
+SHOWLIST: "Database"
 
 logger = logging.getLogger("mtv_dl")
 utc_zone = timezone.utc
@@ -398,7 +243,12 @@ class Database:
         except sqlite3.OperationalError:
             cursor.execute("DELETE FROM main.show")
 
-        # get show data
+        self.connection.commit()
+
+    def update_filmliste(self) -> None:
+        logger.debug("Updating Filmliste database in %r.", self.database_file("main"))
+        cursor = self.connection.cursor()
+        cursor.execute("DELETE FROM main.show")
         cursor.executemany(
             """
             INSERT INTO main.show
@@ -425,10 +275,16 @@ class Database:
             """,
             self._get_shows(),
         )
-
         cursor.execute(f"PRAGMA user_version={int(now.timestamp())}")
-
         self.connection.commit()
+
+    def update_if_old(self) -> None:
+        database_age = now - datetime.fromtimestamp(self.filmliste_version, tz=utc_zone)
+        if database_age > self.filmliste_refresh_after:
+            logger.debug("Database age is %s (too old).", database_age)
+            self.update_filmliste()
+        else:
+            logger.debug("Database age is %s.", database_age)
 
     @property
     def history_version(self) -> int:
@@ -473,7 +329,7 @@ class Database:
             cursor.execute("COMMIT")
             self.connection.isolation_level = old_isolation_level
 
-    def __init__(self, filmliste: Path, history: Path) -> None:
+    def __init__(self, filmliste: Path, history: Path, filmliste_refresh_after: timedelta = timedelta(hours=3)) -> None:
         logger.debug("Opening Filmliste database %r.", filmliste)
         self.connection = sqlite3.connect(
             filmliste.absolute().as_posix(),
@@ -485,6 +341,7 @@ class Database:
 
         self.connection.row_factory = sqlite3.Row
         self.connection.create_function("REGEXP", 2, SqlRegexFunction())
+        self.filmliste_refresh_after = filmliste_refresh_after
         if self.filmliste_version == 0:
             self.initialize_filmliste()
         if self.history_version != 2:
@@ -628,14 +485,6 @@ class Database:
                                 "episode": episode,
                                 "downloaded": None,
                             }
-
-    def initialize_if_old(self, refresh_after: int) -> None:
-        database_age = now - datetime.fromtimestamp(self.filmliste_version, tz=utc_zone)
-        if database_age > timedelta(hours=refresh_after):
-            logger.debug("Database age is %s (too old).", database_age)
-            self.initialize_filmliste()
-        else:
-            logger.debug("Database age is %s.", database_age)
 
     def add_to_downloaded(self, show: "Database.Item") -> None:
         cursor = self.connection.cursor()
@@ -969,7 +818,6 @@ class Downloader:
     def _move_to_user_target(
         self,
         source_path: Path,
-        cwd: Path,
         target: Path,
         file_name: str,
         file_extension: str,
@@ -984,7 +832,7 @@ class Downloader:
         escaped_show_details["episode"] = "00" if self.show["episode"] is None else f"{self.show['episode']:02d}"
         destination_file_path = Path(
             posix_target.format(
-                dir=cwd,
+                dir=Path.cwd().as_posix(),
                 filename=file_name,
                 ext=file_extension,
                 date=self.show["start"].date().isoformat(),
@@ -1137,7 +985,6 @@ class Downloader:
     def download(
         self,
         quality: tuple[Quality, Quality, Quality],
-        cwd: Path,
         target: Path,
         *,
         include_subtitles: bool = True,
@@ -1180,7 +1027,7 @@ class Downloader:
 
             if show_file_extension in (".mp4", ".flv", ".mp3", ".strm"):
                 final_show_file = self._move_to_user_target(
-                    show_file_path, cwd, target, show_file_name, show_file_extension, "show"
+                    show_file_path, target, show_file_name, show_file_extension, "show"
                 )
                 if not final_show_file:
                     return None
@@ -1191,7 +1038,7 @@ class Downloader:
                     ts_file_path = self._download_hls_target(m3u8_segments, temp_path, show_url, quality)
                 else:
                     ts_file_path = self._download_m3u8_target(m3u8_segments, temp_path)
-                final_show_file = self._move_to_user_target(ts_file_path, cwd, target, show_file_name, ".ts", "show")
+                final_show_file = self._move_to_user_target(ts_file_path, target, show_file_name, ".ts", "show")
                 if not final_show_file:
                     return None
 
@@ -1207,7 +1054,7 @@ class Downloader:
                     logger.warning("Missing subtitles for %s.", self.label)
                 else:
                     subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
-                    self._move_to_user_target(subtitles_srt_path, cwd, target, show_file_name, ".srt", "subtitles")
+                    self._move_to_user_target(subtitles_srt_path, target, show_file_name, ".srt", "subtitles")
 
             if include_nfo:
                 root_node = "movie" if not series_mode else "episodedetails"
@@ -1231,7 +1078,7 @@ class Downloader:
                     out_fh.write(Et.tostring(nfo_movie, xml_declaration=True, encoding="UTF-8"))
 
                 nfo_path.chmod(0o644)
-                self._move_to_user_target(nfo_path, cwd, target, show_file_name, ".nfo", "nfo")
+                self._move_to_user_target(nfo_path, target, show_file_name, ".nfo", "nfo")
 
             return final_show_file
 
@@ -1376,73 +1223,409 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
         logger.info("Post-download hook %r returned successful.", executable)
 
 
-def load_config(arguments: dict[str, Any]) -> dict[str, Any]:
-    config_file_path = (Path(arguments["--config"]) if arguments["--config"] else DEFAULT_CONFIG_FILE).expanduser()
+app = typer.Typer(
+    help=f"MediathekView-Commandline-Downloader v{__version__}",
+    rich_markup_mode="markdown",
+)
+
+# Common options shared between commands
+config_help = """
+    Yaml formatted text file to overwrite arguments by their name. 
+    
+    If not defined differently, it is searched for to be in the root of the home dir (~/.mtv_dl.yml).  
+    
+    Example config:
+    
+        verbose: true
+        high: true
+        dir: ~/download
+""".replace("\n", "\n\n")  # noqa: W291, W293
+filter_argument = typer.Argument(
+    help="""
+        Use filter to select only the shows wanted. Syntax is always <field><operator><pattern>.
+        
+        The following operators and fields are available:
+        
+        - '='  Pattern is a search within the field value. 
+        
+            It's a case-insensitive regular expression for the fields 'description', 'start', 
+            'dow' (day of the week), 'hour', 'minute', 'region', 'size', 'channel', 'topic', 
+            'title', 'hash' and 'url'. 
+            
+            For the fields 'duration', 'age', 'episode', and 'season' it's a basic equality comparison.
+        
+        - '!=' Inverse of the '=' operator.
+        
+        - '+'  Pattern must be greater than the field value. 
+        
+            Available for the fields 'duration',
+            'age', 'start', 'dow' (day of the week), 'hour', 'minute', 'size', 'episode', and 'season'.
+        
+        - '-'  Pattern must be less than the field value. 
+        
+            Available for the same fields as for the '+' operator.
+        
+        Pattern should be given in the same format as shown in the list command. Times (for
+        'start'), time deltas (for 'duration', 'age') and numbers ('size') are parsed and
+        smart compared. Day of the week ('dow') is 0-6 with Sunday=0.
+        
+        Examples:
+        - topic='extra 3'                   (topic contains 'extra 3')
+        - title!=spezial                    (title not contains 'spezial')
+        - channel=ARD                       (channel contains ARD)
+        - age-1mm                           (age is younger than 1 month)
+        - duration+20m                      (duration longer then 20 min)
+        - start+2017-07-01                  (show started after 2017-07-01)
+        - start-2017-07-05T23:00:00+02:00   (show started before 2017-07-05, 23:00 CEST)
+        - topic=Tatort dow=0 hour=20        (sunday night Tatort)
+        
+        As many filters as needed may be given as separated arguments (separated  with space).
+        For a show to get considered, _all_ given filter criteria must meet.
+    """.replace("\n", "\n\n")  # noqa: W291, W293
+)
+filter_set_option = typer.Option(
+    "--sets",
+    "-s",
+    help="""
+        A file to load different sets of filters.
+            
+        In commandline with a single run one can only give one set of filters. In most cases
+        this means one can only select a single show to list or download with one run.  
+        
+        For --sets, a file should be given, where every line contains the same filter arguments
+        that one would give on the commandline. The lines are filtered one after another and
+        then processed together. Lines starting with '#' are treated as comment.  
+        
+        Every different filter set is expected to be on a new line.  
+        
+        A text file could look for example like this:  
+          
+            channel=ARD topic='extra 3' title!=spezial duration+20m  
+            channel=ZDF topic='Die Anstalt' duration+45m  
+            channel=ZDF topic=heute-show duration+20m  
+            
+        If additional filters where given through the commandline, all filter sets are extended
+        by these filters. Be aware that this is not faster than running all queries separately
+        but just more comfortable.
+    """.replace("\n", "\n\n"),  # noqa: W291, W293,
+)
+include_future_option = typer.Option(
+    "--include-future",
+    help="Include shows that have not yet started.",
+)
+
+
+@app.command(name="list")
+@use_yaml_config(default_value=CONFIG_FILE, param_help=config_help)
+def list_command(
+    list_filter: Annotated[list[str] | None, filter_argument] = None,
+    filter_sets: Annotated[Path | None, filter_set_option] = None,
+    count: Annotated[
+        int,
+        typer.Option(
+            "--count",
+            "-c",
+            help="Limit the number of results.",
+        ),
+    ] = 50,
+    include_future: Annotated[bool, include_future_option] = False,
+) -> None:
+    """Show the list of query results as ASCII table."""
 
     try:
-        with config_file_path.open(encoding="utf-8") as fr:
-            config = yaml.safe_load(fr)
-
-    except OSError as e:
-        if arguments["--config"]:
-            logger.error("Config file file defined but not loaded: %s", e)
-            sys.exit(1)
-
-    except YAMLError as e:
-        logger.error("Unable to read config file: %s", e)
-        sys.exit(1)
-
-    else:
-        invalid_config_options = set(config.keys()).difference(CONFIG_OPTIONS.keys())
-        if invalid_config_options:
-            logger.error("Invalid config options: %s", ", ".join(invalid_config_options))
-            sys.exit(1)
-
-        else:
-            for option in config:
-                option_type = CONFIG_OPTIONS.get(option)
-                if option_type and not isinstance(config[option], option_type):
-                    logger.error(
-                        "Invalid type for config option %r (found %r but %r expected).",
-                        option,
-                        type(config[option]).__name__,
-                        CONFIG_OPTIONS[option].__name__,
-                    )
-                    sys.exit(1)
-
-        arguments.update({f"--{o}": config[o] for o in config})
-
-    return arguments
-
-
-def main() -> None:
-    """Entry point for the command line interface."""
-
-    # argument handling
-    arguments = docopt.docopt(
-        __doc__.format(
-            cmd=Path(__file__).name,
-            version=__version__,
-            config_file=DEFAULT_CONFIG_FILE,
-            config_options=wrap(
-                ", ".join(f"{c} ({k.__name__})" for c, k in CONFIG_OPTIONS.items()),
-                width=80,
-                subsequent_indent=" " * 4,
-            ),
+        SHOWLIST.update_if_old()
+        shows = chain(
+            *(
+                SHOWLIST.filtered(
+                    rules=filter_set,
+                    include_future=include_future,
+                    limit=count,
+                )
+                for filter_set in SHOWLIST.read_filter_sets(
+                    sets_file_path=filter_sets, default_filter=list_filter or []
+                )
+            )
         )
-    )
+        show_table(shows)
+    except ConfigurationError as e:
+        logger.error(str(e))
+
+
+@app.command(name="dump")
+@use_yaml_config(default_value=CONFIG_FILE, param_help=config_help)
+def dump_command(
+    list_filter: Annotated[list[str] | None, filter_argument] = None,
+    filter_sets: Annotated[Path | None, filter_set_option] = None,
+    include_future: Annotated[bool, include_future_option] = False,
+) -> None:
+    """Show the list of query results as JSON list."""
+
+    try:
+        SHOWLIST.update_if_old()
+        shows = chain(
+            *(
+                SHOWLIST.filtered(
+                    rules=filter_set,
+                    include_future=include_future,
+                    limit=None,
+                )
+                for filter_set in SHOWLIST.read_filter_sets(
+                    sets_file_path=filter_sets, default_filter=list_filter or []
+                )
+            )
+        )
+        print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))
+    except ConfigurationError as e:
+        logger.error(str(e))
+
+
+@app.command(name="download")
+@use_yaml_config(default_value=CONFIG_FILE, param_help=config_help)
+def download_command(
+    list_filter: Annotated[list[str] | None, filter_argument] = None,
+    filter_sets: Annotated[Path | None, filter_set_option] = None,
+    high: Annotated[
+        bool,
+        typer.Option(
+            "--high",
+            "-h",
+            help="Download the best available version.",
+        ),
+    ] = False,
+    low: Annotated[
+        bool,
+        typer.Option(
+            "--low",
+            "-l",
+            help="Download the smallest available version.",
+        ),
+    ] = False,
+    oblivious: Annotated[
+        bool,
+        typer.Option(
+            "--oblivious",
+            "-o",
+            help="Download even if the show already is marked as downloaded.",
+        ),
+    ] = False,
+    target: Annotated[
+        Path | None,
+        typer.Option(
+            "--target",
+            "-t",
+            help="""
+                Directory to put the downloaded files in.
+                
+                May contain the parameters {{dir}} (from the option --dir),
+                {{filename}} (from server filename) and {{ext}} (file
+                name extension including the dot), and all fields from
+                the listing plus {{date}} and {{time}} (the single parts
+                of {{start}}). 
+                
+                If {{ext}} is not in the definition, it's appended automatically.
+            """,  # noqa: W291, W293
+        ),
+    ] = None,
+    mark_only: Annotated[
+        bool,
+        typer.Option(
+            "--mark-only",
+            help="""
+                Do not download any show, but mark it as downloaded in the history.
+                
+                This is to initialize a new filter if upcoming shows are wanted.
+            """,  # noqa: W293
+        ),
+    ] = False,
+    strm: Annotated[
+        bool,
+        typer.Option(
+            "--strm",
+            help="Create .strm files instead of downloading media.",
+        ),
+    ] = False,
+    no_subtitles: Annotated[
+        bool,
+        typer.Option("--no-subtitles", help="Do not try to download subtitles."),
+    ] = False,
+    no_nfo: Annotated[
+        bool,
+        typer.Option("--no-nfo", help="Do not create nfo files."),
+    ] = False,
+    set_file_mod_time: Annotated[
+        bool,
+        typer.Option(
+            "--set-file-mod-time",
+            help="Set the file modification time of the downloaded show to the aired date (if available).",
+        ),
+    ] = False,
+    series: Annotated[
+        bool,
+        typer.Option(
+            "--series",
+            help="Mark the show as series in the nfo file, add season and episode information.",
+        ),
+    ] = False,
+    post_download: Annotated[
+        str | None,
+        typer.Option(
+            "--post-download",
+            help="""
+                Program to run after a download has finished.
+                
+                Details about the downloaded how are given via
+                environment variables: FILE, HASH, CHANNEL, DESCRIPTION, 
+                REGION, SIZE, TITLE, TOPIC, WEBSITE, START, and DURATION 
+                (all prefixed with MTV_DL_).
+            """,  # noqa: W291, W293
+        ),
+    ] = None,
+    include_future: Annotated[bool, include_future_option] = False,
+) -> None:
+    """Download shows in the list of query results."""
+
+    if not list_filter and not filter_sets:
+        logger.error("At least one filter set is required.")
+        sys.exit(1)
+    try:
+        SHOWLIST.update_if_old()
+        shows = chain(
+            *(
+                SHOWLIST.filtered(
+                    rules=filter_set,
+                    include_future=include_future,
+                    limit=None,
+                )
+                for filter_set in SHOWLIST.read_filter_sets(
+                    sets_file_path=filter_sets, default_filter=list_filter or []
+                )
+            )
+        )
+
+        for item in shows:
+            downloader = Downloader(item)
+            if not downloader.show.get("downloaded") or oblivious:
+                if not mark_only:
+                    if high:
+                        quality_preference = ("url_http_hd", "url_http", "url_http_small")
+                    elif low:
+                        quality_preference = ("url_http_small", "url_http", "url_http_hd")
+                    else:
+                        quality_preference = ("url_http", "url_http_hd", "url_http_small")
+                    downloaded_file = downloader.download(
+                        quality=quality_preference,  # type: ignore
+                        target=target.expanduser() if target else Path.cwd(),
+                        include_subtitles=not no_subtitles,
+                        include_nfo=not no_nfo,
+                        set_file_modification_date=set_file_mod_time,
+                        create_strm_files=strm,
+                        series_mode=series,
+                    )
+                    if downloaded_file:
+                        SHOWLIST.add_to_downloaded(item)
+                        if post_download:
+                            executable = Path(post_download).expanduser()
+                            run_post_download_hook(executable, item, downloaded_file)
+                else:
+                    SHOWLIST.add_to_downloaded(downloader.show)
+                    logger.info("Marked %s as downloaded.", downloader.label)
+            else:
+                logger.debug("Skipping %s (already loaded on %s)", downloader.label, item["downloaded"])
+
+    except ConfigurationError as e:
+        logger.error(str(e))
+
+
+@app.command(name="history")
+@use_yaml_config(default_value=CONFIG_FILE, param_help=config_help)
+def history_command(
+    reset: Annotated[
+        bool,
+        typer.Option("--reset", help="Reset the list of downloaded shows."),
+    ] = False,
+    remove: Annotated[
+        str | None,
+        typer.Option("--remove", help="Remove a single show from the history."),
+    ] = None,
+) -> None:
+    """Show the list of downloaded shows."""
+
+    SHOWLIST.update_if_old()
+    if reset:
+        SHOWLIST.purge_downloaded()
+    elif remove:
+        SHOWLIST.remove_from_downloaded(show_hash=remove)
+    else:
+        show_table(SHOWLIST.downloaded())
+
+
+@app.callback()
+@use_yaml_config(default_value=CONFIG_FILE, param_help=config_help)
+def setup(
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Show more details.",
+        ),
+    ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option(
+            "--quiet",
+            "-q",
+            help="Hide everything not really needed.",
+        ),
+    ] = False,
+    no_bar: Annotated[
+        bool,
+        typer.Option(
+            "--no-bar",
+            "-b",
+            help="Hide the progress bar.",
+        ),
+    ] = False,
+    logfile: Annotated[
+        str | None,
+        typer.Option(
+            "--logfile",
+            "-l",
+            help="Log messages to a file instead of stdout.",
+        ),
+    ] = None,
+    use_certifi: Annotated[
+        bool,
+        typer.Option(
+            "--certifi",
+            help="Use certifi instead of builtin SSL certificates.",
+        ),
+    ] = False,
+    db_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--dir",
+            "-d",
+            help="Directory to put the databases in (default is the current working directory).",
+        ),
+    ] = None,
+    refresh_after: Annotated[
+        int,
+        typer.Option(
+            "--refresh-after",
+            "-r",
+            help="Update database if it is older than the given number of hours.",
+        ),
+    ] = 3,
+) -> None:
+    """Prepare the environment for the commands."""
 
     # mute third party modules
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    # config handling
-    arguments = load_config(arguments)
-
     # ISO8601 logger
-    if arguments["--logfile"]:
-        logging_handler: logging.Handler = logging.FileHandler(
-            Path(arguments["--logfile"]).expanduser(), encoding="utf-8"
-        )
+    if logfile:
+        logging_handler: logging.Handler = logging.FileHandler(Path(logfile).expanduser(), encoding="utf-8")
         logging_handler.setFormatter(
             logging.Formatter(
                 fmt="%(asctime)s %(levelname)-8s %(message)s",
@@ -1462,95 +1645,32 @@ def main() -> None:
 
     # progressbar handling
     global HIDE_PROGRESSBAR
-    HIDE_PROGRESSBAR = bool(arguments["--logfile"]) or bool(arguments["--no-bar"]) or arguments["--quiet"]
+    HIDE_PROGRESSBAR = bool(logfile) or no_bar or quiet
 
     global CAFILE
-    if arguments["--certifi"]:
-        import certifi
-
+    if use_certifi:
         CAFILE = certifi.where()
 
-    if arguments["--verbose"]:
+    if verbose:
         logger.setLevel(logging.DEBUG)
-    elif arguments["--quiet"]:
+    elif quiet:
         logger.setLevel(logging.ERROR)
     else:
         logger.setLevel(logging.INFO)
 
     # temp file and download config
-    cw_dir = Path(arguments["--dir"]).expanduser().absolute() if arguments["--dir"] else Path.cwd()
-    target_dir = Path(arguments["--target"]).expanduser()
+    cw_dir = Path(db_dir).expanduser().absolute() if db_dir else Path.cwd()
     cw_dir.mkdir(parents=True, exist_ok=True)
+    chdir(cw_dir)
     tempfile.tempdir = cw_dir.as_posix()
 
-    try:
-        showlist = Database(filmliste=cw_dir / FILMLISTE_DATABASE_FILE, history=cw_dir / HISTORY_DATABASE_FILE)
-        showlist.initialize_if_old(refresh_after=int(arguments["--refresh-after"]))
-
-        if arguments["history"]:
-            if arguments["--reset"]:
-                showlist.purge_downloaded()
-            elif arguments["--remove"]:
-                showlist.remove_from_downloaded(show_hash=arguments["--remove"])
-            else:
-                show_table(showlist.downloaded())
-
-        else:
-            limit = int(arguments["--count"]) if arguments["list"] else None
-            shows = chain(
-                *(
-                    showlist.filtered(
-                        rules=filter_set, include_future=arguments["--include-future"], limit=limit or None
-                    )
-                    for filter_set in showlist.read_filter_sets(
-                        sets_file_path=(Path(arguments["--sets"]) if arguments["--sets"] else None),
-                        default_filter=arguments["<filter>"],
-                    )
-                )
-            )
-            if arguments["list"]:
-                show_table(shows)
-
-            elif arguments["dump"]:
-                print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))
-
-            elif arguments["download"]:
-                for item in shows:
-                    downloader = Downloader(item)
-                    if not downloader.show.get("downloaded") or arguments["--oblivious"]:
-                        if not arguments["--mark-only"]:
-                            if arguments["--high"]:
-                                quality_preference = ("url_http_hd", "url_http", "url_http_small")
-                            elif arguments["--low"]:
-                                quality_preference = ("url_http_small", "url_http", "url_http_hd")
-                            else:
-                                quality_preference = ("url_http", "url_http_hd", "url_http_small")
-                            downloaded_file = downloader.download(
-                                quality_preference,  # type: ignore
-                                cw_dir,
-                                target_dir,
-                                include_subtitles=not arguments["--no-subtitles"],
-                                include_nfo=not arguments["--no-nfo"],
-                                set_file_modification_date=arguments["--set-file-mod-time"],
-                                create_strm_files=arguments["--strm"],
-                                series_mode=arguments["--series"],
-                            )
-                            if downloaded_file:
-                                showlist.add_to_downloaded(item)
-                                if arguments["--post-download"]:
-                                    executable = Path(arguments["--post-download"]).expanduser()
-                                    run_post_download_hook(executable, item, downloaded_file)
-                        else:
-                            showlist.add_to_downloaded(downloader.show)
-                            logger.info("Marked %s as downloaded.", downloader.label)
-                    else:
-                        logger.debug("Skipping %s (already loaded on %s)", downloader.label, item["downloaded"])
-
-    except ConfigurationError as e:
-        logger.error(str(e))
-    except KeyboardInterrupt:
-        pass
+    global SHOWLIST
+    SHOWLIST = Database(
+        filmliste=cw_dir / FILMLISTE_DATABASE_FILE,
+        filmliste_refresh_after=timedelta(hours=refresh_after),
+        history=cw_dir / HISTORY_DATABASE_FILE,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    app()

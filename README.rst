@@ -7,7 +7,7 @@ A command line tool to download videos from public broadcasting services in Germ
 Features
 --------
 
-- No GUI or web interface. Less then 1000 lines of code. Only python dependencies.
+- Commandline first interface.
 - Powerful filter system for lists and download selection.
 - Download .mp4, .flv and .m3u8 (HLS) media inclusive subtitles.
 - Keep track of downloaded files and don't download them again.

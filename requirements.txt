@@ -1,6 +1,7 @@
 beautifulsoup4
 certifi
-docopt
+typer
+typer-config
 durationpy
 ijson
 iso8601
