@@ -25,6 +25,7 @@ from contextlib import suppress
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+from importlib.metadata import version
 from io import BytesIO
 from itertools import chain
 from os import chdir
@@ -52,9 +53,6 @@ from rich.progress import Progress
 from rich.progress import TextColumn
 from rich.progress import TimeRemainingColumn
 from rich.table import Table
-
-__version__ = "0.0.0"
-
 from typer_config import use_yaml_config
 
 CHUNK_SIZE = 128 * 1024
@@ -64,7 +62,7 @@ if (default_config_file := Path("~/.mtv_dl.yml").expanduser()).exists():
 else:
     CONFIG_FILE = None
 HISTORY_DATABASE_FILE = ".History.sqlite"
-FILMLISTE_DATABASE_FILE = f".Filmliste.{__version__}.sqlite"
+FILMLISTE_DATABASE_FILE = f".Filmliste.{version('mtv_dl')}.sqlite"
 
 # regex to find characters not allowed in file names
 INVALID_FILENAME_CHARACTERS = re.compile("[{}]".format(re.escape('<>:"/\\|?*' + "".join(chr(i) for i in range(32)))))
@@ -1229,7 +1227,7 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
 
 
 app = typer.Typer(
-    help=f"MediathekView-Commandline-Downloader v{__version__}",
+    help=f"MediathekView-Commandline-Downloader v{version('mtv_dl')}",
     rich_markup_mode="markdown",
 )
 

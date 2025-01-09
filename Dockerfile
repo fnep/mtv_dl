@@ -1,12 +1,10 @@
-FROM python:3.10 AS build
-RUN pip3 install poetry poetry-dynamic-versioning
+FROM ghcr.io/astral-sh/uv:python3.13-alpine AS build
 COPY ./ /app/
-RUN rm -rf /app/dist
 WORKDIR /app
-RUN poetry install
-RUN poetry build
+RUN apk add git
+RUN uv sync --frozen && uv build
 
-FROM python:3.10
+FROM python:3.13
 COPY --from=build /app/dist/*.whl /tmp/
 RUN pip3 install /tmp/*.whl && rm /tmp/*.whl
 RUN mkdir /data
