@@ -29,6 +29,7 @@ from io import BytesIO
 from itertools import chain
 from os import chdir
 from pathlib import Path
+from ssl import create_default_context
 from tempfile import NamedTemporaryFile
 from typing import Annotated
 from typing import Any
@@ -74,7 +75,7 @@ FILMLISTE_URL = "https://liste.mediathekview.de/Filmliste-akt.xz"
 
 # global state
 HIDE_PROGRESSBAR = True
-CAFILE: str | None = None
+SSL_CONTEXT = create_default_context()
 SHOWLIST: "Database"
 
 logger = logging.getLogger("mtv_dl")
@@ -392,7 +393,11 @@ class Database:
             retries -= 1
             try:
                 logger.debug("Opening database from %r.", FILMLISTE_URL)
-                response: http.client.HTTPResponse = urllib.request.urlopen(FILMLISTE_URL, timeout=9, cafile=CAFILE)
+                response: http.client.HTTPResponse = urllib.request.urlopen(
+                    FILMLISTE_URL,
+                    timeout=9,
+                    context=SSL_CONTEXT,
+                )
                 total_size = int(response.getheader("content-length") or 0)
                 with BytesIO() as buffer:
                     with progress_bar() as progress:
@@ -784,7 +789,7 @@ class Downloader:
             bar_id = progress.add_task(description=f"Downloading {self.label}")
 
             for url in target_urls:
-                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=60, cafile=CAFILE)
+                response: http.client.HTTPResponse = urllib.request.urlopen(url, timeout=60, context=SSL_CONTEXT)
 
                 # determine file size for progressbar
                 file_sizes.append(int(response.getheader("content-length") or 0))
@@ -1647,9 +1652,9 @@ def setup(
     global HIDE_PROGRESSBAR
     HIDE_PROGRESSBAR = bool(logfile) or no_bar or quiet
 
-    global CAFILE
+    global SSL_CONTEXT
     if use_certifi:
-        CAFILE = certifi.where()
+        SSL_CONTEXT = create_default_context(cafile=certifi.where())
 
     if verbose:
         logger.setLevel(logging.DEBUG)
