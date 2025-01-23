@@ -1412,23 +1412,23 @@ def download_command(
         ),
     ] = False,
     target: Annotated[
-        Path | None,
+        Path,
         typer.Option(
             "--target",
             "-t",
             help="""
                 Directory to put the downloaded files in.
                 
-                May contain the parameters {{dir}} (from the option --dir),
-                {{filename}} (from server filename) and {{ext}} (file
+                May contain the parameters {dir} (from the option --dir),
+                {filename} (from server filename) and {ext} (file
                 name extension including the dot), and all fields from
-                the listing plus {{date}} and {{time}} (the single parts
-                of {{start}}). 
+                the listing plus {date} and {time} (the single parts
+                of {start}). 
                 
-                If {{ext}} is not in the definition, it's appended automatically.
+                If {ext} is not in the definition, it's appended automatically.
             """,  # noqa: W291, W293
         ),
-    ] = None,
+    ] = Path("{dir}/{channel}/{topic}/{start} {title}{ext}"),
     mark_only: Annotated[
         bool,
         typer.Option(
@@ -1517,7 +1517,7 @@ def download_command(
                         quality_preference = ("url_http", "url_http_hd", "url_http_small")
                     downloaded_file = downloader.download(
                         quality=quality_preference,  # type: ignore
-                        target=target.expanduser() if target else Path.cwd(),
+                        target=target.expanduser(),
                         include_subtitles=not no_subtitles,
                         include_nfo=not no_nfo,
                         set_file_modification_date=set_file_mod_time,
