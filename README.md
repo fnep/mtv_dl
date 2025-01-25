@@ -43,7 +43,7 @@ channel=ZDF topic=heute-show duration+20m
 ```
 
 ```shell
-❯ mtv_dl download --dir=/media --high --target='{dir}/{channel}/[{topic} {date}] {title}{ext}' --sets=shows.txt
+❯ mtv_dl --dir=/media download --high --target='{dir}/{channel}/[{topic} {date}] {title}{ext}' --sets=shows.txt
 ```
 
 ### Use a config file to apply useful defaults for all commands
