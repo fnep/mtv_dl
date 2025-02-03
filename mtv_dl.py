@@ -1604,7 +1604,7 @@ def setup(
             help="Use certifi instead of builtin SSL certificates.",
         ),
     ] = False,
-    db_dir: Annotated[
+    dir: Annotated[  # noqa: A002
         Path | None,
         typer.Option(
             "--dir",
@@ -1662,7 +1662,7 @@ def setup(
         logger.setLevel(logging.INFO)
 
     # temp file and download config
-    cw_dir = Path(db_dir).expanduser().absolute() if db_dir else Path.cwd()
+    cw_dir = Path(dir).expanduser().absolute() if dir else Path.cwd()
     cw_dir.mkdir(parents=True, exist_ok=True)
     chdir(cw_dir)
     tempfile.tempdir = cw_dir.as_posix()
