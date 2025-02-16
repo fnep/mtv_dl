@@ -1226,6 +1226,22 @@ def run_post_download_hook(executable: Path, item: Database.Item, downloaded_fil
         logger.info("Post-download hook %r returned successful.", executable)
 
 
+def filter_shows(
+    include_future: bool, filter_sets: Path | None, list_filter: list[str] | None, limit: int | None = None
+) -> Iterable[Database.Item]:
+    SHOWLIST.update_if_old()
+    return chain(
+        *(
+            SHOWLIST.filtered(
+                rules=filter_set,
+                include_future=include_future,
+                limit=limit,
+            )
+            for filter_set in SHOWLIST.read_filter_sets(sets_file_path=filter_sets, default_filter=list_filter or [])
+        )
+    )
+
+
 app = typer.Typer(
     help=f"MediathekView-Commandline-Downloader v{version('mtv_dl')}",
     rich_markup_mode="markdown",
@@ -1336,19 +1352,7 @@ def list_command(
     """Show the list of query results as ASCII table."""
 
     try:
-        SHOWLIST.update_if_old()
-        shows = chain(
-            *(
-                SHOWLIST.filtered(
-                    rules=filter_set,
-                    include_future=include_future,
-                    limit=count,
-                )
-                for filter_set in SHOWLIST.read_filter_sets(
-                    sets_file_path=filter_sets, default_filter=list_filter or []
-                )
-            )
-        )
+        shows = filter_shows(include_future, filter_sets, list_filter, count)
         show_table(shows)
     except ConfigurationError as e:
         logger.error(str(e))
@@ -1364,19 +1368,7 @@ def dump_command(
     """Show the list of query results as JSON list."""
 
     try:
-        SHOWLIST.update_if_old()
-        shows = chain(
-            *(
-                SHOWLIST.filtered(
-                    rules=filter_set,
-                    include_future=include_future,
-                    limit=None,
-                )
-                for filter_set in SHOWLIST.read_filter_sets(
-                    sets_file_path=filter_sets, default_filter=list_filter or []
-                )
-            )
-        )
+        shows = filter_shows(include_future, filter_sets, list_filter)
         print(json.dumps(list(shows), default=serialize_for_json, indent=4, sort_keys=True))
     except ConfigurationError as e:
         logger.error(str(e))
@@ -1491,19 +1483,7 @@ def download_command(
         logger.error("At least one filter set is required.")
         sys.exit(1)
     try:
-        SHOWLIST.update_if_old()
-        shows = chain(
-            *(
-                SHOWLIST.filtered(
-                    rules=filter_set,
-                    include_future=include_future,
-                    limit=None,
-                )
-                for filter_set in SHOWLIST.read_filter_sets(
-                    sets_file_path=filter_sets, default_filter=list_filter or []
-                )
-            )
-        )
+        shows = filter_shows(include_future, filter_sets, list_filter)
 
         for item in shows:
             downloader = Downloader(item)
