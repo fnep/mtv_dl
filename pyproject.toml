@@ -1,8 +1,8 @@
 [project]
 name = "mtv_dl"
-dynamic = ["version"]
+version = "0.27.1"
 description = "MediathekView Downloader"
-readme = "DESCRIPTION.rst"
+readme = "README.md"
 authors = [
     { name = "Frank Epperlein", email = "frank+mtv_dl@epperle.in" },
 ]
@@ -17,30 +17,29 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 requires-python = ">=3.10"
-
-scripts = { mtv_dl = 'mtv_dl:app' }
-
 dependencies = [
     "iso8601~=2.1.0",
-    "durationpy~=0.7",
+    "durationpy~=0.10",
     "PyYAML~=6.0",
-    "beautifulsoup4~=4.12.3",
-    "rich~=13.8.0",
-    "certifi~=2024.8.30",
-    "ijson~=3.3.0",
-    "typer~=0.12.5",
-    "typer-config[yaml]~=1.4.0",
+    "beautifulsoup4~=4.13.4",
+    "rich~=14.0.0",
+    "certifi~=2025.4.26",
+    "ijson~=3.4.0",
+    "typer~=0.16.0",
+    "typer-config[yaml]~=1.4.2",
 ]
+
+[project.scripts]
+mtv_dl = "mtv_dl.mtv_dl:app"
 
 [dependency-groups]
 dev = [
-    "mypy~=1.11.2",
-    "twine~=5.1.1",
+    "mypy~=1.16.0",
     "types-PyYAML~=6.0.12.20240808",
     "types-certifi~=2021.10.8.3",
-    "pytest~=8.3.2",
-    "ruff~=0.6.3",
-    "pytest-mypy~=0.10.3",
+    "pytest~=8.4.0",
+    "ruff~=0.11.12",
+    "pytest-mypy~=1.0.1",
     "pytest-ruff~=0.4.1",
 ]
 
@@ -50,12 +49,8 @@ strict = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 
-[tool.black]
-line-length = 120
-
 [tool.ruff]
 line-length = 120
-target-version = "py310"
 lint.select = [
     "A",
     "ARG",
@@ -71,23 +66,11 @@ lint.select = [
     "W",
 ]
 lint.isort.force-single-line = true
-exclude = [".venv"]
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules --mypy --ruff --ruff-format"
 xfail_strict = true
 
 [build-system]
-requires = ["hatchling", "uv-dynamic-versioning"]
-build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
-
-[tool.hatch.build]
-include = [
-  "mtv_dl.py",
-]
-
-[tool.uv-dynamic-versioning]
-format = '{base}.{distance}'
+requires = ["uv_build>=0.7.10,<0.8.0"]
+build-backend = "uv_build"

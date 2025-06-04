@@ -411,7 +411,7 @@ class Database:
                     yield buffer
             except urllib.error.HTTPError as e:
                 if retries:
-                    logger.debug("Database download failed (%d more retries): %s" % (retries, e))
+                    logger.debug(f"Database download failed ({retries:d} more retries): {e}")
                 else:
                     logger.error(f"Database download failed (no more retries): {e}")
                     raise RetryLimitExceededError("retry limit reached, giving up")
@@ -739,7 +739,7 @@ def show_table(shows: Iterable[Database.Item]) -> None:
             with suppress(OSError, OverflowError):
                 obj = obj.astimezone(None)
 
-            return obj.isoformat()
+            return str(obj.isoformat())
         elif isinstance(obj, timedelta):
             return str(re.sub(r"(\d+)", r" \1", durationpy.to_str(obj, extended=True)).strip())
         else:
@@ -972,7 +972,7 @@ class Downloader:
             return t
 
         with subtitles_srt_path.open("w", encoding="utf-8") as srt:
-            for p_tag in soup.findAll("tt:p"):
+            for p_tag in soup.findAll("tt:p"):  # type: ignore[call-arg]
                 # noinspection PyBroadException
                 try:
                     srt.write(str(int(re.sub(r"\D", "", p_tag.get("xml:id"))) + 1) + "\n")
