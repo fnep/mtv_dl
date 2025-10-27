@@ -72,5 +72,5 @@ addopts = "--doctest-modules --mypy --ruff --ruff-format"
 xfail_strict = true
 
 [build-system]
-requires = ["uv_build>=0.7.10,<0.8.0"]
+requires = ["uv_build"]
 build-backend = "uv_build"
