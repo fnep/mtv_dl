@@ -153,7 +153,6 @@ def escape_path(s: str) -> str:
 
 
 class Database:
-    # noinspection SpellCheckingInspection
     TRANSLATION: ClassVar = {
         "Beschreibung": "description",
         "Datum": "date",
@@ -518,7 +517,6 @@ class Database:
 
     def purge_downloaded(self) -> None:
         cursor = self.connection.cursor()
-        # noinspection SqlWithoutWhere
         cursor.execute("DELETE FROM history.downloaded")
         self.connection.commit()
 
@@ -760,7 +758,6 @@ def show_table(shows: Iterable[Database.Item]) -> None:
         "episode",
     ]
 
-    # noinspection PyTypeChecker
     table = Table(box=box.MINIMAL_DOUBLE_HEAD)
     for h in headers:
         table.add_column(h)
@@ -961,10 +958,14 @@ class Downloader:
             "S6": "#FF00FF",
             "S7": "#00FFFF",
             "S8": "#FFFFFF",
+            "style-1": "#00FFFF",
+            "style-2": "#FFFF00",
+            "style-3": "#FFFFFF",
+            "style-4": "#00FF00",
         }
 
         def font_colour(text: str, colour: str) -> str:
-            return f'<font color="{colour_to_rgb[colour]}">{text}</font>\n'
+            return f'<font color="{colour_to_rgb.get(colour, "#000000")}">{text}</font>\n'
 
         def convert_time(t: str) -> str:
             t = t.replace(".", ",")
@@ -972,12 +973,11 @@ class Downloader:
             return t
 
         with subtitles_srt_path.open("w", encoding="utf-8") as srt:
-            for p_tag in soup.findAll("tt:p"):  # type: ignore[call-arg]
-                # noinspection PyBroadException
+            for p_tag in soup.findAll(["tt:p", "p"]):  # type: ignore[call-arg]
                 try:
                     srt.write(str(int(re.sub(r"\D", "", p_tag.get("xml:id"))) + 1) + "\n")
                     srt.write(f"{convert_time(p_tag['begin'])} --> {convert_time(p_tag['end'])}\n")
-                    for span_tag in p_tag.findAll("tt:span"):
+                    for span_tag in p_tag.findAll(["tt:span", "span"]):
                         srt.write(font_colour(span_tag.text, span_tag.get("style")).replace("&apos", "'"))
                     srt.write("\n")
                 except Exception as e:

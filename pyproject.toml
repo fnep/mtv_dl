@@ -1,6 +1,6 @@
 [project]
 name = "mtv_dl"
-version = "0.27.1"
+version = "0.27.2"
 description = "MediathekView Downloader"
 readme = "README.md"
 authors = [
