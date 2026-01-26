@@ -1,6 +1,6 @@
 [project]
 name = "mtv_dl"
-version = "0.27.2"
+version = "0.27.3"
 description = "MediathekView Downloader"
 readme = "README.md"
 authors = [
@@ -36,6 +36,7 @@ mtv_dl = "mtv_dl.mtv_dl:app"
 dev = [
     "mypy~=1.16.0",
     "types-PyYAML~=6.0.12.20240808",
+    "types-beautifulsoup4~=4.12.0.20250516",
     "types-certifi~=2021.10.8.3",
     "pytest~=8.4.0",
     "ruff~=0.11.12",

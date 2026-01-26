@@ -18,6 +18,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+import warnings
 from collections.abc import Iterable
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -45,6 +46,7 @@ import ijson
 import iso8601
 import typer
 from bs4 import BeautifulSoup
+from bs4 import XMLParsedAsHTMLWarning
 from rich import box
 from rich.console import Console
 from rich.logging import RichHandler
@@ -87,6 +89,9 @@ sqlite3.register_converter("timedelta", lambda v: timedelta(seconds=int(v)))
 
 # console handler for tables and progress bars
 console = Console()
+
+# disable xml-parsed-as-h-t-m-l-warning from BeautifulSoup, to avoid additional lxml dependency
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 
 @contextmanager
@@ -973,11 +978,11 @@ class Downloader:
             return t
 
         with subtitles_srt_path.open("w", encoding="utf-8") as srt:
-            for p_tag in soup.findAll(["tt:p", "p"]):  # type: ignore[call-arg]
+            for p_tag in soup.find_all(["tt:p", "p"]):
                 try:
                     srt.write(str(int(re.sub(r"\D", "", p_tag.get("xml:id"))) + 1) + "\n")
                     srt.write(f"{convert_time(p_tag['begin'])} --> {convert_time(p_tag['end'])}\n")
-                    for span_tag in p_tag.findAll(["tt:span", "span"]):
+                    for span_tag in p_tag.find_all(["tt:span", "span"]):
                         srt.write(font_colour(span_tag.text, span_tag.get("style")).replace("&apos", "'"))
                     srt.write("\n")
                 except Exception as e:
