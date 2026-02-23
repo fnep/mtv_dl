@@ -990,6 +990,54 @@ class Downloader:
 
         return subtitles_srt_path
 
+    def _mux_with_mkvmerge(self, video_path: Path, subtitle_path: Path | None) -> Path | None:
+        mkvmerge_binary = shutil.which("mkvmerge")
+        if not mkvmerge_binary:
+            logger.error(
+                "Cannot create MKV for %s: mkvmerge executable not found. Install mkvmerge (mkvtoolnix).",
+                self.label,
+            )
+            return None
+
+        mkv_output_path = video_path.with_suffix(".mkv")
+        try:
+            if mkv_output_path.exists():
+                mkv_output_path.unlink()
+        except OSError as e:
+            logger.error("Unable to prepare MKV destination %r: %s", mkv_output_path, e)
+            return None
+
+        command = [
+            mkvmerge_binary,
+            "-o",
+            mkv_output_path.as_posix(),
+            video_path.as_posix(),
+        ]
+        if subtitle_path and subtitle_path.exists():
+            command.append(subtitle_path.as_posix())
+
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error("mkvmerge failed for %s: %s", self.label, (e.stdout or "").strip())
+            with suppress(FileNotFoundError):
+                mkv_output_path.unlink(missing_ok=True)
+            return None
+
+        logger.info("Muxed %s into %r.", self.label, mkv_output_path)
+        with suppress(FileNotFoundError):
+            video_path.unlink(missing_ok=True)
+        if subtitle_path:
+            with suppress(FileNotFoundError):
+                subtitle_path.unlink(missing_ok=True)
+        return mkv_output_path
+
     def download(
         self,
         quality: tuple[Quality, Quality, Quality],
@@ -1000,8 +1048,10 @@ class Downloader:
         set_file_modification_date: bool = False,
         create_strm_files: bool = False,
         series_mode: bool = False,
+        merge_to_mkv: bool = False,
     ) -> Path | None:
         temp_path = Path(tempfile.mkdtemp(prefix=".tmp"))
+        subtitle_target_path: Path | None = None
         try:
             # show url based on quality preference
             show_url = self.show[quality[0]] or self.show[quality[1]] or self.show[quality[2]]
@@ -1062,7 +1112,11 @@ class Downloader:
                     logger.warning("Missing subtitles for %s.", self.label)
                 else:
                     subtitles_srt_path = self._convert_subtitles_xml_to_srt(subtitles_xml_path)
-                    self._move_to_user_target(subtitles_srt_path, target, show_file_name, ".srt", "subtitles")
+                    moved_subtitles = self._move_to_user_target(
+                        subtitles_srt_path, target, show_file_name, ".srt", "subtitles"
+                    )
+                    if moved_subtitles:
+                        subtitle_target_path = moved_subtitles
 
             if include_nfo:
                 root_node = "movie" if not series_mode else "episodedetails"
@@ -1087,6 +1141,20 @@ class Downloader:
 
                 nfo_path.chmod(0o644)
                 self._move_to_user_target(nfo_path, target, show_file_name, ".nfo", "nfo")
+
+            file_suffix = final_show_file.suffix.lower()
+            if merge_to_mkv and file_suffix != ".mkv":
+                supported_video_suffixes = {".mp4", ".flv", ".ts"}
+                if file_suffix in supported_video_suffixes:
+                    mkv_path = self._mux_with_mkvmerge(final_show_file, subtitle_target_path)
+                    if mkv_path:
+                        final_show_file = mkv_path
+                else:
+                    logger.warning(
+                        "MKV muxing requested for %s but file type %s is not supported.",
+                        self.label,
+                        file_suffix,
+                    )
 
             return final_show_file
 
@@ -1474,6 +1542,14 @@ def download_command(
             help="Mark the show as series in the nfo file, add season and episode information.",
         ),
     ] = False,
+    mkvmerge: Annotated[
+        bool,
+        typer.Option(
+            "--mkvmerge",
+            "-m",
+            help="Convert downloads to MKV containers using mkvmerge (requires mkvmerge on PATH).",
+        ),
+    ] = False,
     post_download: Annotated[
         str | None,
         typer.Option(
@@ -1528,6 +1604,7 @@ def download_command(
                         set_file_modification_date=set_file_mod_time,
                         create_strm_files=strm,
                         series_mode=series,
+                        merge_to_mkv=mkvmerge,
                     )
                     if downloaded_file:
                         SHOWLIST.add_to_downloaded(item)
