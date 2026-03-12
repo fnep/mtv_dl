@@ -192,7 +192,7 @@ wheels = [
 
 [[package]]
 name = "mtv-dl"
-version = "0.27.3"
+version = "0.28.0"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
