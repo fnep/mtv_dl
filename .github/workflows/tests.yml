@@ -10,14 +10,24 @@ on:
 
 jobs:
   pytest:
+    name: Python ${{ matrix.python-version }}${{ matrix.experimental && ' (experimental)' || '' }}
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
+      fail-fast: false
       matrix:
+        experimental: [false]
         python-version:
           - "3.10"
           - "3.11"
           - "3.12"
           - "3.13"
+          - "3.14"
+        include:
+          # The current lockfile's typing-extensions fails to import on 3.15.
+          # Make this required once the scheduled dependency update passes CI.
+          - python-version: "3.15"
+            experimental: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -28,7 +38,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Run pytest
-        run: uv run pytest --junitxml=junit/test-results-${{ matrix.python-version }}.xml
+        run: uv run --locked pytest --junitxml=junit/test-results-${{ matrix.python-version }}.xml
+
+      - name: Check CLI startup
+        if: ${{ !cancelled() }}
+        run: uv run --locked mtv_dl --help
 
       - name: Upload pytest test results
         uses: actions/upload-artifact@v4
@@ -36,3 +50,41 @@ jobs:
           name: pytest-results-${{ matrix.python-version }}
           path: junit/test-results-${{ matrix.python-version }}.xml
         if: ${{ always() }}
+
+  docker:
+    name: Docker runtime (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Use the actual Dockerfile so future runtime-image updates are tested too.
+      - name: Build production image without publishing
+        run: docker build --pull --platform ${{ matrix.platform }} -t mtv-dl:test .
+
+      - name: Check runtime and installed dependencies
+        run: |
+          docker run --rm --network none --entrypoint python mtv-dl:test --version
+          docker run --rm --network none --entrypoint python mtv-dl:test -m pip check
+          docker run --rm --network none --entrypoint python mtv-dl:test -m pip freeze
+
+      - name: Check production entrypoint
+        run: docker run --rm --network none mtv-dl:test --help
+
+      - name: Run doctests against the installed wheel
+        run: |
+          docker run --rm --network none --entrypoint python mtv-dl:test -c '
+          import doctest
+          import mtv_dl.mtv_dl as module
+          result = doctest.testmod(module, verbose=True)
+          assert result.attempted > 0, "No doctests discovered"
+          raise SystemExit(bool(result.failed))
+          '
