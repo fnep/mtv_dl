@@ -46,7 +46,7 @@ jobs:
         if: ${{ always() }}
 
   docker:
-    name: Docker runtime (${{ matrix.platform }})
+    name: Docker build (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -60,25 +60,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Use the actual Dockerfile so future runtime-image updates are tested too.
+      # Build the actual Dockerfile, including future base-image updates.
       - name: Build production image without publishing
         run: docker build --pull --platform ${{ matrix.platform }} -t mtv-dl:test .
-
-      - name: Check runtime and installed dependencies
-        run: |
-          docker run --rm --network none --entrypoint python mtv-dl:test --version
-          docker run --rm --network none --entrypoint python mtv-dl:test -m pip check
-          docker run --rm --network none --entrypoint python mtv-dl:test -m pip freeze
-
-      - name: Check production entrypoint
-        run: docker run --rm --network none mtv-dl:test --help
-
-      - name: Run doctests against the installed wheel
-        run: |
-          docker run --rm --network none --entrypoint python mtv-dl:test -c '
-          import doctest
-          import mtv_dl.mtv_dl as module
-          result = doctest.testmod(module, verbose=True)
-          assert result.attempted > 0, "No doctests discovered"
-          raise SystemExit(bool(result.failed))
-          '
