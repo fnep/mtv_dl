@@ -4,7 +4,7 @@ WORKDIR /app
 RUN apk add git
 RUN uv sync --frozen && uv build
 
-FROM python:3.13
+FROM python:3.15
 COPY --from=build /app/dist/*.whl /tmp/
 RUN pip3 install /tmp/*.whl && rm /tmp/*.whl
 RUN mkdir /data

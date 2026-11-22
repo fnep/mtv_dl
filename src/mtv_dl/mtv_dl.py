@@ -23,9 +23,9 @@ from collections.abc import Iterable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextlib import suppress
+from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
-from datetime import timezone
 from importlib.metadata import version
 from io import BytesIO
 from itertools import chain
@@ -79,7 +79,7 @@ SSL_CONTEXT = create_default_context()
 SHOWLIST: "Database"
 
 logger = logging.getLogger("mtv_dl")
-utc_zone = timezone.utc
+utc_zone = UTC
 now = datetime.now(tz=utc_zone).replace(second=0, microsecond=0)
 
 
@@ -1071,8 +1071,8 @@ class Downloader:
                 os.utime(
                     show_file_path,
                     (
-                        self.show["start"].replace(tzinfo=timezone.utc).timestamp(),
-                        self.show["start"].replace(tzinfo=timezone.utc).timestamp(),
+                        self.show["start"].replace(tzinfo=UTC).timestamp(),
+                        self.show["start"].replace(tzinfo=UTC).timestamp(),
                     ),
                 )
 
