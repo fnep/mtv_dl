@@ -94,7 +94,7 @@ target: '{dir}/{channel}/[{topic} {date}] {title}{ext}'
 
 Requirements:
 
-- python3.10 or later
+- python3.12 or later
 - everything in pyproject.toml
 
 The easiest way is to install using pip:
